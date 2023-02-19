@@ -34,13 +34,8 @@
 //! the admin address to a new address, and update the metadata URL.
 #![cfg_attr(not(feature = "std"), no_std)]
 
-
-
-use concordium_cis2::{Cis2Event, *, };
+use concordium_cis2::{Cis2Event, *};
 use concordium_std::{collections::BTreeMap, *};
-
-/// The id of the liquidity token in this contract.
-const TOKEN_ID_LIQ: ContractTokenId = TokenIdUnit();
 
 /// Tag for the NewAdmin event.
 pub const NEW_ADMIN_EVENT_TAG: u8 = 0;
@@ -55,12 +50,19 @@ const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
 /// Since this contract will only ever contain this one token type, we use the
 /// smallest possible token ID.
 type ContractTokenId = TokenIdUnit;
+type ContractTokenAId = TokenIdU64;
+
+/// The id of the liquidity token in this contract.
+const TOKEN_ID_LIQ: ContractTokenId = TokenIdUnit();
 
 /// Contract token amount type.
 /// ??? bigest to acomodate any token type
 /// this will introduce some more cost ...
 /// maybe better to pass ti as a parameter
 type ContractTokenAmount = TokenAmountU64;
+type ContractTokenAAmount = TokenAmountU64;
+
+type TransferParam = Transfer<ContractTokenAId, ContractTokenAAmount>;
 
 /// The state tracked for each address.
 #[derive(Serial, DeserialWithState, Deletable, StateClone)]
@@ -72,7 +74,6 @@ struct AddressState<S> {
     /// this address.
     operators: StateSet<Address, S>,
 }
-
 
 /// The contract state,
 // #[derive(Serial, DeserialWithState, StateClone)]
@@ -91,12 +92,8 @@ struct State<S: HasStateApi> {
     /// Map with contract addresses providing implementations of additional
     /// standards.
     implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
-    /// The MetadataUrl of the token.
-    /// `StateBox` allows for lazy loading data. This is helpful
-    /// in the situations when one wants to do a partial update not touching
-    /// this field, which can be large.
-    /// utl contains:
-    /*{
+    /*
+    {
       "name": "Liquidity Token Pair tokA-CCD",
       "symbol": "CCDS-TOKA-CCD",
       "decimals": 6,
@@ -115,8 +112,14 @@ struct State<S: HasStateApi> {
     metadata_url: StateBox<concordium_cis2::MetadataUrl, S>,
     /// Map specifying the `AddressState` (balance and operators) for every
     /// address.
-    token_a: TokenIdU64,
-    contract_token_a: Address,
+    token_a: ContractTokenAId,
+    contract_token_a: ContractAddress,
+    k_last: u128,
+    reserve_a: u64,   // uses single storage slot, accessible via getReserves
+    reserve_ccd: u64, // uses single storage slot, accessible via getReserves
+    blocktimestamp_last: Timestamp, // uses single storage slot, accessible via getReserves
+    fee_liquidity_provider: u64, // fee for liquidity providers 0.2 %
+    fee_protocol: u64, // fee for protocol 0.1 %
 }
 
 /// The parameter type for the contract function `unwrap`.
@@ -193,11 +196,12 @@ struct ReturnBasicState {
 #[derive(Serialize, SchemaType, Clone)]
 struct SetInitParams {
     token_a: TokenIdU64,
-    contract_token_a: Address,
+    contract_token_a: ContractAddress,
     /// The URL following the specification RFC1738.
     url: String,
     /// The hash of the document stored at the above URL.
     hash: Option<Sha256>,
+    blocktimestamp_last: Timestamp,
 }
 
 /// The parameter type for the contract function `setMetadataUrl`.
@@ -229,6 +233,7 @@ struct NewAdminEvent {
 enum CcdSwapEvent {
     NewAdmin(NewAdminEvent),
     SwapCis2Event(Cis2Event<ContractTokenId, ContractTokenAmount>),
+    SwapCcdEvent(Cis2Event<ContractTokenAId, ContractTokenAAmount>),
 }
 
 impl Serial for CcdSwapEvent {
@@ -239,6 +244,7 @@ impl Serial for CcdSwapEvent {
                 event.serial(out)
             }
             CcdSwapEvent::SwapCis2Event(event) => event.serial(out),
+            CcdSwapEvent::SwapCcdEvent(event) => event.serial(out),
         }
     }
 }
@@ -339,6 +345,10 @@ enum CcdSwapContractError {
     /// Upgrade failed because the smart contract version of the module is not
     /// supported.
     FailedUpgradeUnsupportedModuleVersion,
+    FailedSetCcdReserve,
+    FailedSetTokenAReserve,
+    FailedCcdSwap,
+    FailedTokenASwap,
 }
 
 type ContractError = Cis2Error<CcdSwapContractError>;
@@ -395,7 +405,8 @@ impl<S: HasStateApi> State<S> {
         admin: Address,
         metadata_url: concordium_cis2::MetadataUrl,
         token_a: TokenIdU64,
-        contract_token_a: Address,
+        contract_token_a: ContractAddress,
+        blocktimestamp_last: Timestamp,
     ) -> Self {
         State {
             admin,
@@ -405,6 +416,12 @@ impl<S: HasStateApi> State<S> {
             metadata_url: state_builder.new_box(metadata_url),
             token_a,
             contract_token_a,
+            k_last: 0u128, // reserve0 * reserve1, as of immediately after the most recent liquidity event
+            reserve_a: 0u64, // uses single storage slot, accessible via getReserves
+            reserve_ccd: 0u64, // uses single storage slot, accessible via getReserves
+            blocktimestamp_last, // uses single storage slot, accessible via getReserves
+            fee_liquidity_provider: 200_000u64, // 0.2%
+            fee_protocol: 100_000u64, // 0.3%
         }
     }
 
@@ -578,7 +595,7 @@ fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
     logger: &mut impl HasLogger,
-) -> InitResult<State<S>>{
+) -> InitResult<State<S>> {
     // Parse the parameter.
     //let params: SetMetadataUrlParams = ctx.parameter_cursor().get()?;
     let params: SetInitParams = ctx.parameter_cursor().get()?;
@@ -587,6 +604,7 @@ fn contract_init<S: HasStateApi>(
     let invoker = Address::Account(ctx.init_origin());
     let token_a = params.token_a;
     let contract_token_a = params.contract_token_a;
+    let time_stamp = params.blocktimestamp_last;
 
     // Create the metadata_url
     let metadata_url = MetadataUrl {
@@ -601,6 +619,7 @@ fn contract_init<S: HasStateApi>(
         metadata_url.clone(),
         token_a,
         contract_token_a,
+        time_stamp,
     );
     // Log event for the newly minted token.
     logger.log(&CcdSwapEvent::SwapCis2Event(Cis2Event::Mint(MintEvent {
@@ -715,7 +734,7 @@ fn contract_wrap<S: HasStateApi>(
     mutable,
     payable
 )]
-fn contract_swap_ccd_to_token_a<S: HasStateApi >(
+fn contract_swap_ccd_to_token_a<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
     amount: Amount,
@@ -729,61 +748,90 @@ fn contract_swap_ccd_to_token_a<S: HasStateApi >(
 
     // Parse the parameter.
     let params: SwapParams = ctx.parameter_cursor().get()?;
+
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
 
     let receive_address = params.to.address();
-
+    let bal = host.self_balance().micro_ccd;
     let (state, state_builder) = host.state_and_builder();
+
+    println!("==================> befor reserve A {}", state.reserve_a);
+    println!(
+        "==================> before reserve CCD {}",
+        state.reserve_ccd
+    );
+    println!("==================> befor k last {}", state.k_last);
+    let k = state.k_last;
     //[TODO] find price and convert
+    let a = amount.micro_ccd as u128;
+    let res_ccd = state.reserve_ccd as u128;
+    println!("==================> swap ccd amount {}", a);
+    const DECI: u128 = 1_000_000_000u128; // two decimals more for correct operation over mCdd
+    let alpha: u128 = a * DECI / res_ccd;
+    println!("==================> swap alpha {}", alpha);
+    let beta = alpha * DECI / (alpha + DECI);
+    println!("==================> swap beta {}", beta);
+    let to_send = beta * (state.reserve_a as u128);
+    println!("==================> swap to send  {}", to_send);
 
-    //[TODO] change mint to transfert
+    // Update the state. and check bal
+    state.k_last = (a * DECI * to_send) / (alpha * beta);
+    state.reserve_ccd += a as u64;
+    //to_send = (beta * (state.reserveA as u128)) /  DECI;
+    state.reserve_a -= (to_send / DECI) as u64;
 
-    // Update the state.
-    state.mint(
-        &TOKEN_ID_LIQ,
-        (amount.micro_ccd as u64).into(),
-        &receive_address,
-        state_builder,
-    )?;
+    println!("==================> state res Ccd {}", state.reserve_ccd);
+    println!("==================> state res A {}", state.reserve_a);
+    println!("==================> state k last {}", state.k_last);
+    println!("==================> state k before {}", k);
+    ensure!(
+        k == state.k_last,
+        ContractError::Custom(CcdSwapContractError::FailedCcdSwap)
+    );
+    println!("==================> state bal before {}", bal);
+    ensure!(
+        bal == state.reserve_ccd,
+        ContractError::Custom(CcdSwapContractError::FailedCcdSwap)
+    );
 
-    // Log the swaped tokenA
-    logger.log(&CcdSwapEvent::SwapCis2Event(Cis2Event::Mint(MintEvent {
-        token_id: TOKEN_ID_LIQ,
-        amount: ContractTokenAmount::from(amount.micro_ccd as u64),
-        owner: sender,
-    })))?;
+    let tok_a_contract_addr = ContractAddress::from(state.contract_token_a);
+    let id = state.token_a;
+    let my_addr = Address::Contract(ctx.self_address());
 
-    // [TODO] adapt here
-    // Only logs a transfer event if the receiver is not the sender.
-    // Only executes the `OnReceivingCis2` hook if the receiver is not the sender
-    // and the receiver is a contract.
-    if sender != receive_address {
-        logger.log(&CcdSwapEvent::SwapCis2Event(Cis2Event::Transfer(
-            TransferEvent {
-                token_id: TOKEN_ID_LIQ,
-                amount: ContractTokenAmount::from(amount.micro_ccd as u64),
-                from: sender,
-                to: receive_address,
-            },
-        )))?;
-
-        // If the receiver is a contract: invoke the receive hook function.
-        if let Receiver::Contract(address, function) = params.to {
-            let parameter = OnReceivingCis2Params {
-                token_id: TOKEN_ID_LIQ,
-                amount: ContractTokenAmount::from(amount.micro_ccd as u64),
-                from: sender,
-                data: params.data,
+    logger.log(&CcdSwapEvent::SwapCcdEvent(Cis2Event::Transfer(
+        TransferEvent {
+            token_id: state.token_a,
+            amount: ContractTokenAmount::from(amount.micro_ccd as u64),
+            from: sender,
+            to: receive_address,
+        },
+    )))?;
+    
+    match ctx.sender() {
+        Address::Account(addr) => {
+            let rcv = Receiver::Account(addr);
+            let parameter = TransferParam {
+                token_id: id,
+                amount: ContractTokenAAmount::from(to_send as u64),
+                from: my_addr,
+                to: rcv,
+                data: AdditionalData::empty(),
             };
             host.invoke_contract(
-                &address,
+                &tok_a_contract_addr,
                 &parameter,
-                function.as_entrypoint_name(),
+                EntrypointName::new_unchecked("transfer"),
                 Amount::zero(),
             )?;
         }
+        Address::Contract(_) => {
+            bail!(ContractError::Custom(CcdSwapContractError::FailedCcdSwap).into());
+        }
     }
+
+
+
     Ok(())
 }
 
@@ -796,7 +844,7 @@ fn contract_swap_ccd_to_token_a<S: HasStateApi >(
     enable_logger,
     mutable
 )]
-fn contract_unwrap<S: HasStateApi >(
+fn contract_unwrap<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
@@ -861,7 +909,7 @@ fn contract_unwrap<S: HasStateApi >(
     enable_logger,
     mutable
 )]
-fn contract_update_admin<S: HasStateApi >(
+fn contract_update_admin<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
@@ -1193,7 +1241,7 @@ pub type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTok
     return_value = "TokenMetadataQueryResponse",
     error = "ContractError"
 )]
-fn contract_token_metadata<S: HasStateApi >(
+fn contract_token_metadata<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<TokenMetadataQueryResponse> {
@@ -1357,12 +1405,25 @@ mod tests {
     const NEW_ADMIN_ACCOUNT: AccountAddress = AccountAddress([3u8; 32]);
     const NEW_ADMIN_ADDRESS: Address = Address::Account(NEW_ADMIN_ACCOUNT);
 
+    const CONTRACT_ADDRESS: ContractAddress = ContractAddress {
+        index: 1u64,
+        subindex: 0u64,
+    };
+
     const TOKEN_A_ID: TokenIdU64 = TokenIdU64(7u64);
-    const CONTRAT_TOK_A_ACCOUNT: AccountAddress = AccountAddress([4u8; 32]);
-    const CONTRAT_TOK_A_ADDRESS: Address = Address::Account(CONTRAT_TOK_A_ACCOUNT);
+    const CONTRAT_TOK_A_ADDRESS: ContractAddress = ContractAddress {
+        index: 2u64,
+        subindex: 0u64,
+    };
+    //const CONTRAT_TOK_A_ADDRESS: Address = Address::Contract(CONTRAT_TOK_A_ACCOUNT);
 
     // The metadata url for the wCCD token.
     const INITIAL_TOKEN_METADATA_URL: &str = "https://some.example/token/ccds-toka-ccd";
+
+    const LIQ_INIT: u64 = 400_000_000u64;
+    const K_INIT: u128 = (LIQ_INIT as u128).pow(2);
+    const RESERVE_CCD_INIT: u64 = 10_000_000_000u64;
+    const RESERVE_A_INIT: u64 = 16_000_000u64;
 
     /// Test helper function which creates a contract state where ADDRESS_0 owns
     /// 400 tokens.
@@ -1384,10 +1445,17 @@ mod tests {
             metadata_url,
             TOKEN_A_ID,
             CONTRAT_TOK_A_ADDRESS,
+            Timestamp::from_timestamp_millis(1676747117u64),
         );
+        // mint 400 liq tokens
+
         state
-            .mint(&TOKEN_ID_LIQ, 400u64.into(), &ADDRESS_0, state_builder)
+            .mint(&TOKEN_ID_LIQ, LIQ_INIT.into(), &ADDRESS_0, state_builder)
             .expect_report("Failed to setup state");
+        // set k = liq**2
+        state.k_last = K_INIT;
+        state.reserve_ccd = RESERVE_CCD_INIT;
+        state.reserve_a = RESERVE_A_INIT;
         state
     }
 
@@ -1414,6 +1482,7 @@ mod tests {
             contract_token_a: CONTRAT_TOK_A_ADDRESS,
             url: String::from(INITIAL_TOKEN_METADATA_URL),
             hash: Some(initial_metadata_hash),
+            blocktimestamp_last: Timestamp::from_timestamp_millis(1676747117u64),
         };
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
@@ -1503,6 +1572,7 @@ mod tests {
             metadata_url,
             TOKEN_A_ID,
             CONTRAT_TOK_A_ADDRESS,
+            Timestamp::from_timestamp_millis(1676747117u64),
         );
         let mut host = TestHost::new(state, state_builder);
 
@@ -1601,6 +1671,7 @@ mod tests {
             metadata_url,
             TOKEN_A_ID,
             CONTRAT_TOK_A_ADDRESS,
+            Timestamp::from_timestamp_millis(1676747117u64),
         );
         state
             .mint(&TOKEN_ID_LIQ, 400.into(), &ADDRESS_0, &mut state_builder)
@@ -1648,7 +1719,6 @@ mod tests {
         )
     }
 
-    /*
     /// Test transfer token fails, when sender is neither the owner or an
     /// operator of the owner.
     #[concordium_test]
@@ -1690,6 +1760,8 @@ mod tests {
     #[concordium_test]
     fn test_operator_transfer() {
         // Set up the context
+
+        const AMOUNT_SENT: u64 = 100_000_000u64;
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_1);
 
@@ -1698,7 +1770,7 @@ mod tests {
             from: ADDRESS_0,
             to: Receiver::from_account(ACCOUNT_1),
             token_id: TOKEN_ID_LIQ,
-            amount: ContractTokenAmount::from(100),
+            amount: ContractTokenAmount::from(AMOUNT_SENT),
             data: AdditionalData::empty(),
         };
         let parameter = TransferParams::from(vec![transfer]);
@@ -1728,12 +1800,12 @@ mod tests {
             .expect_report("Token is expected to exist");
         claim_eq!(
             balance0,
-            300.into(),
+            (LIQ_INIT - AMOUNT_SENT).into(),
             "Token owner balance should be decreased by the transferred amount"
         );
         claim_eq!(
             balance1,
-            100.into(),
+            (AMOUNT_SENT).into(),
             "Token receiver balance should be increased by the transferred amount"
         );
 
@@ -1746,7 +1818,7 @@ mod tests {
                     from: ADDRESS_0,
                     to: ADDRESS_1,
                     token_id: TOKEN_ID_LIQ,
-                    amount: ContractTokenAmount::from(100),
+                    amount: ContractTokenAmount::from(AMOUNT_SENT),
                 }
             ))),
             "Incorrect event emitted"
@@ -1945,7 +2017,7 @@ mod tests {
         // The balance should still be 400 due to the rollback after rejecting.
         claim_eq!(
             host.state().balance(&TOKEN_ID_LIQ, &ADDRESS_0),
-            Ok(400u64.into()),
+            Ok(LIQ_INIT.into()),
             "ADDRESS_0 balance should still be 400"
         );
         claim!(
@@ -1953,7 +2025,81 @@ mod tests {
             "No transfers should have happened"
         );
     }
+    /// Test wrap and unwrap functions.
+    #[concordium_test]
+    fn test_swap_function() {
+        // Set up the context.
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_1);
+        ctx.set_self_address(CONTRACT_ADDRESS);
 
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+
+        const EXPECTED_TOKENS: u64 = 158415u64;
+        const EXPECTED_KLAST: u128 = 160000000000000000u128;
+
+        let mut host = TestHost::new(state, state_builder);
+
+        host.set_self_balance(Amount::from_micro_ccd(RESERVE_CCD_INIT));
+        host.setup_mock_entrypoint(
+            CONTRAT_TOK_A_ADDRESS,
+            OwnedEntrypointName::new_unchecked("transfer".to_string()),
+            // simple MockFn::returning_ok(42u8),
+            MockFn::new_v1(
+                |parameter: Parameter, amount, _balance, _state: &mut State<TestStateApi>| {
+                    let tp: TransferParam = match from_bytes(parameter.as_ref()) {
+                        Ok(n) => n,
+                        Err(_) => return Err(CallContractError::Trap),
+                    };
+
+                    if amount.micro_ccd > 0 {
+                        println!("Mock amount in mccd ==============> {}", amount.micro_ccd);
+                        return Err(CallContractError::Trap);
+                    }
+
+                    if EXPECTED_TOKENS == tp.amount.into() {
+                        println!("Mock amount in mccd ==============> {}", amount.micro_ccd);
+                        return Err(CallContractError::Trap);
+                    }
+
+                    let state_modified = false; // Mock did not modify the state.
+
+                    //Ok((state_modified, n + 1))
+                    Ok((state_modified, tp))
+                },
+            ),
+        );
+        // Set up the parameter.
+        let swap_params = SwapParams {
+            to: Receiver::from_account(ACCOUNT_1),
+            data: AdditionalData::empty(),
+        };
+        let parameter_bytes = to_bytes(&swap_params);
+        ctx.set_parameter(&parameter_bytes);
+
+        let amount = 100_000_000u64;
+        host.set_self_balance(Amount::from_micro_ccd(RESERVE_CCD_INIT + amount));
+
+        // Testing the `swap` function
+
+        // ADDRESS_1 wraps some CCD.
+
+        let result: ContractResult<()> = contract_swap_ccd_to_token_a(
+            &ctx,
+            &mut host,
+            Amount::from_micro_ccd(amount),
+            &mut logger,
+        );
+
+        claim!(result.is_ok(), "Results in rejection");
+
+        // check state
+        let k = host.state().k_last;
+        claim_eq!(k, EXPECTED_KLAST, "wrong K!");
+    }
+    /*
     /// Test admin can update to a new admin address.
     #[concordium_test]
     fn test_update_admin() {
