@@ -420,8 +420,8 @@ impl<S: HasStateApi> State<S> {
             reserve_a: 0u64, // uses single storage slot, accessible via getReserves
             reserve_ccd: 0u64, // uses single storage slot, accessible via getReserves
             blocktimestamp_last, // uses single storage slot, accessible via getReserves
-            fee_liquidity_provider: 200_000u64, // 0.2%
-            fee_protocol: 100_000u64, // 0.3%
+            fee_liquidity_provider: 2_000u64, // 0.2%
+            fee_protocol: 1_000u64, // 0.3%
         }
     }
 
@@ -766,27 +766,36 @@ fn contract_swap_ccd_to_token_a<S: HasStateApi>(
     //[TODO] find price and convert
     let a = amount.micro_ccd as u128;
     let res_ccd = state.reserve_ccd as u128;
+    let res_a = state.reserve_a as u128;
     println!("==================> swap ccd amount {}", a);
     const DECI: u128 = 1_000_000_000u128; // two decimals more for correct operation over mCdd
     let alpha: u128 = a * DECI / res_ccd;
     println!("==================> swap alpha {}", alpha);
     let beta = alpha * DECI / (alpha + DECI);
     println!("==================> swap beta {}", beta);
-    let to_send = beta * (state.reserve_a as u128);
-    println!("==================> swap to send  {}", to_send);
+    let mut to_send = beta * (state.reserve_a as u128);
+    println!("==================> swap to send  no fees {}", to_send);
+    println!(
+        "==================>  fees {}",
+        (state.fee_liquidity_provider + state.fee_protocol) as u128
+    );
+    to_send -=
+        to_send * ((state.fee_liquidity_provider + state.fee_protocol) as u128) / 1_000_000u128;
+    println!("==================> swap to send  with fees {}", to_send);
 
     // Update the state. and check bal
-    state.k_last = (a * DECI * to_send) / (alpha * beta);
     state.reserve_ccd += a as u64;
-    //to_send = (beta * (state.reserveA as u128)) /  DECI;
     state.reserve_a -= (to_send / DECI) as u64;
+    state.k_last = (state.reserve_a as u128) * (state.reserve_ccd as u128);
+    let actual = state.reserve_a * state.reserve_ccd;
 
     println!("==================> state res Ccd {}", state.reserve_ccd);
     println!("==================> state res A {}", state.reserve_a);
     println!("==================> state k last {}", state.k_last);
+    println!("==================> state k actual {}", actual);
     println!("==================> state k before {}", k);
     ensure!(
-        k == state.k_last,
+        k <= state.k_last,
         ContractError::Custom(CcdSwapContractError::FailedCcdSwap)
     );
     println!("==================> state bal before {}", bal);
@@ -807,13 +816,13 @@ fn contract_swap_ccd_to_token_a<S: HasStateApi>(
             to: receive_address,
         },
     )))?;
-    
+
     match ctx.sender() {
         Address::Account(addr) => {
             let rcv = Receiver::Account(addr);
             let parameter = TransferParam {
                 token_id: id,
-                amount: ContractTokenAAmount::from(to_send as u64),
+                amount: ContractTokenAAmount::from((to_send / DECI) as u64),
                 from: my_addr,
                 to: rcv,
                 data: AdditionalData::empty(),
@@ -829,8 +838,6 @@ fn contract_swap_ccd_to_token_a<S: HasStateApi>(
             bail!(ContractError::Custom(CcdSwapContractError::FailedCcdSwap).into());
         }
     }
-
-
 
     Ok(())
 }
@@ -1425,8 +1432,45 @@ mod tests {
     const RESERVE_CCD_INIT: u64 = 10_000_000_000u64;
     const RESERVE_A_INIT: u64 = 16_000_000u64;
 
-    /// Test helper function which creates a contract state where ADDRESS_0 owns
-    /// 400 tokens.
+    /// function that operates swap values with floating point
+    /// and then give uints
+    /// @param res_a: u64 amount reserve A
+    /// @param res_b: u64 amount reserve B
+    /// @param amount: A to swap
+    /// @param fee: f64 fee in %
+    struct SwapValues {
+        x: u64,
+        y: u64,
+        dx: u64,
+        dy: u64,
+        k: u128,
+    }
+    impl SwapValues {
+        fn display(&self) {
+            println!(
+                "results should be res_a: {} res_b: {}  recieved {} send {} new_k: {}",
+                self.x, self.y, self.dx, self.dy, self.k
+            );
+        }
+    }
+    fn compute_swap_values(res_a: u64, res_b: u64, amount: u64, fee: f64) -> SwapValues {
+        let a: f64 = (amount as f64) / (res_a as f64);
+        let b: f64 = a / (a + 1.0);
+        let dx = a * (res_a as f64);
+        let dy = b * (res_b as f64) * (1.0 - fee);
+        let x = (res_a as f64) + dx;
+        let y = (res_b as f64) - dy;
+        let k = x * y;
+        return SwapValues {
+            x: x as u64,
+            y: y as u64,
+            dx: dx as u64,
+            dy: dy as u64,
+            k: k as u128,
+        };
+    }
+
+    /// Test helper function which creates a contract initial state
     fn initial_state<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> State<S> {
         // Set up crypto primitives to hash the document.
         let crypto_primitives = TestCryptoPrimitives::new();
@@ -2028,6 +2072,12 @@ mod tests {
     /// Test wrap and unwrap functions.
     #[concordium_test]
     fn test_swap_function() {
+
+        // compute expected values for an amount
+        let amount = 100_000_000u64;
+        let expected = compute_swap_values(RESERVE_CCD_INIT, RESERVE_A_INIT, amount, 0.003);
+        expected.display();
+        
         // Set up the context.
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_1);
@@ -2037,8 +2087,8 @@ mod tests {
         let mut state_builder = TestStateBuilder::new();
         let state = initial_state(&mut state_builder);
 
-        const EXPECTED_TOKENS: u64 = 158415u64;
-        const EXPECTED_KLAST: u128 = 160000000000000000u128;
+        const EXPECTED_TOKENS: u64 = 157940592480000u64 / 1_000_000_000u64;
+        const EXPECTED_KLAST: u128 = 160004806000000000u128;
 
         let mut host = TestHost::new(state, state_builder);
 
@@ -2046,7 +2096,6 @@ mod tests {
         host.setup_mock_entrypoint(
             CONTRAT_TOK_A_ADDRESS,
             OwnedEntrypointName::new_unchecked("transfer".to_string()),
-            // simple MockFn::returning_ok(42u8),
             MockFn::new_v1(
                 |parameter: Parameter, amount, _balance, _state: &mut State<TestStateApi>| {
                     let tp: TransferParam = match from_bytes(parameter.as_ref()) {
@@ -2059,8 +2108,8 @@ mod tests {
                         return Err(CallContractError::Trap);
                     }
 
-                    if EXPECTED_TOKENS == tp.amount.into() {
-                        println!("Mock amount in mccd ==============> {}", amount.micro_ccd);
+                    if EXPECTED_TOKENS != tp.amount.into() {
+                        println!("Mock amount in mccd ==============> {:?}", tp.amount);
                         return Err(CallContractError::Trap);
                     }
 
@@ -2079,7 +2128,6 @@ mod tests {
         let parameter_bytes = to_bytes(&swap_params);
         ctx.set_parameter(&parameter_bytes);
 
-        let amount = 100_000_000u64;
         host.set_self_balance(Amount::from_micro_ccd(RESERVE_CCD_INIT + amount));
 
         // Testing the `swap` function
@@ -2099,7 +2147,6 @@ mod tests {
         let k = host.state().k_last;
         claim_eq!(k, EXPECTED_KLAST, "wrong K!");
     }
-    /*
     /// Test admin can update to a new admin address.
     #[concordium_test]
     fn test_update_admin() {
@@ -2361,5 +2408,4 @@ mod tests {
             "Unwrap should fail because contract is paused"
         );
     }
-    */
 }
