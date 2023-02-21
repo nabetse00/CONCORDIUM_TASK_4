@@ -40,6 +40,23 @@ use concordium_std::{collections::BTreeMap, *};
 /// Tag for the NewAdmin event.
 pub const NEW_ADMIN_EVENT_TAG: u8 = 0;
 
+/// Tag for the NewAdmin event.
+pub const NEW_SWAP_TOKEN_A_EVENT_TAG: u8 = 1;
+
+// tag for add liquidity event
+pub const ADD_LIQ_EVENT_TAG: u8 = 2;
+
+/// for decimal operation
+const DECI: u128 = 10_000_000_000u128; // extra decimals for correct divisions
+
+fn sqrt_u64(num: u128) -> u64 {
+    let mut x = num;
+    while x * x > num {
+        x = (x + num / x) / 2;
+    }
+    x as u64
+}
+
 /// List of supported standards by this contract address.
 const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
     [CIS0_STANDARD_IDENTIFIER, CIS2_STANDARD_IDENTIFIER];
@@ -138,10 +155,62 @@ struct UnwrapParams {
     data: AdditionalData,
 }
 
-/// The parameter type for the contract function `wrap`.
+#[derive(Serialize, SchemaType)]
+struct RemoveLiqParams {
+    /// The amount of tokens to unwrap.
+    amount: ContractTokenAmount,
+    /// The owner of the tokens.
+    owner: Address,
+    /// The address to receive these unwrapped CCD.
+    receiver: Receiver,
+    /// If the `Receiver` is a contract the unwrapped CCD together with these
+    /// additional data bytes are sent to the function entrypoint specified in
+    /// the `Receiver`.
+    data: AdditionalData,
+}
+
+#[derive(Serialize, SchemaType)]
+struct SwapTokenAParams {
+    /// The amount of tokens to unwrap.
+    amount: ContractTokenAAmount,
+    /// The owner of the tokens.
+    /// owner: Address,
+    /// The address to receive these unwrapped CCD.
+    receiver: Receiver,
+    /// If the `Receiver` is a contract the unwrapped CCD together with these
+    /// additional data bytes are sent to the function entrypoint specified in
+    /// the `Receiver`.
+    data: AdditionalData,
+}
+
+/// The parameter type for the contract function `swap token A`.
 /// It includes a receiver for receiving the wrapped CCD tokens.
 #[derive(Serialize, SchemaType)]
-struct SwapParams {
+struct TokenASwapParams {
+    /// The address to receive these tokens.
+    /// If the receiver is the sender of the message wrapping the tokens, it
+    /// will not log a transfer event.
+    to: Receiver,
+    amount: ContractTokenAAmount,
+    /// Some additional data bytes are used in the `OnReceivingCis2` hook. Only
+    /// if the `Receiver` is a contract and the `Receiver` is not
+    /// the invoker of the wrap function the receive hook function is
+    /// executed. The `OnReceivingCis2` hook invokes the function entrypoint
+    /// specified in the `Receiver` with these additional data bytes as
+    /// part of the input parameters. This action allows the receiving smart
+    /// contract to react to the credited wCCD amount.
+    data: AdditionalData,
+}
+
+#[derive(Serialize, SchemaType)]
+struct AddLiquidityParams {
+    to: Receiver,
+    amount: ContractTokenAAmount,
+    data: AdditionalData,
+}
+
+#[derive(Serialize, SchemaType)]
+struct CcdSwapParams {
     /// The address to receive these tokens.
     /// If the receiver is the sender of the message wrapping the tokens, it
     /// will not log a transfer event.
@@ -229,11 +298,26 @@ struct NewAdminEvent {
     new_admin: Address,
 }
 
+#[derive(Serial, SchemaType)]
+struct SwapTokenAForCcdEvent {
+    amount: Amount,
+    receiver: Address,
+}
+
+#[derive(Serial, SchemaType)]
+struct AddLiquidityEvent {
+    amount_a: ContractTokenAAmount,
+    amount_ccd: Amount,
+    receiver: Address,
+}
+
 /// Tagged events to be serialized for the event log.
 enum CcdSwapEvent {
     NewAdmin(NewAdminEvent),
     SwapCis2Event(Cis2Event<ContractTokenId, ContractTokenAmount>),
     SwapCcdEvent(Cis2Event<ContractTokenAId, ContractTokenAAmount>),
+    SwapTokenAEvent(SwapTokenAForCcdEvent),
+    AddLiquity(AddLiquidityEvent),
 }
 
 impl Serial for CcdSwapEvent {
@@ -245,6 +329,14 @@ impl Serial for CcdSwapEvent {
             }
             CcdSwapEvent::SwapCis2Event(event) => event.serial(out),
             CcdSwapEvent::SwapCcdEvent(event) => event.serial(out),
+            CcdSwapEvent::SwapTokenAEvent(event) => {
+                out.write_u8(NEW_SWAP_TOKEN_A_EVENT_TAG)?;
+                event.serial(out)
+            }
+            CcdSwapEvent::AddLiquity(event) => {
+                out.write_u8(ADD_LIQ_EVENT_TAG)?;
+                event.serial(out)
+            }
         }
     }
 }
@@ -260,6 +352,27 @@ impl schema::SchemaType for CcdSwapEvent {
             (
                 "NewAdmin".to_string(),
                 schema::Fields::Named(vec![(String::from("new_admin"), Address::get_type())]),
+            ),
+        );
+        event_map.insert(
+            NEW_SWAP_TOKEN_A_EVENT_TAG,
+            (
+                "SwapTokenAForCCD".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("amount"), Amount::get_type()),
+                    (String::from("reciever"), Address::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            ADD_LIQ_EVENT_TAG,
+            (
+                "AddLiquidity".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("amount_a"), ContractTokenAAmount::get_type()),
+                    (String::from("amount_ccd"), ContractTokenAmount::get_type()),
+                    (String::from("reciever"), Address::get_type()),
+                ]),
             ),
         );
         event_map.insert(
@@ -348,7 +461,11 @@ enum CcdSwapContractError {
     FailedSetCcdReserve,
     FailedSetTokenAReserve,
     FailedCcdSwap,
+    FailedCcdSwapNotEnoughtTokenA,
     FailedTokenASwap,
+    FailedTokenASwapContractCannotSwap,
+    OnlyContract,
+    RemoveLiqFail,
 }
 
 type ContractError = Cis2Error<CcdSwapContractError>;
@@ -645,89 +762,11 @@ fn contract_init<S: HasStateApi>(
     Ok(state)
 }
 
-/// Wrap an amount of CCD into wCCD tokens and transfer the tokens if the sender
-/// is not the receiver.
-#[receive(
-    contract = "ccd_swap",
-    name = "wrap",
-    parameter = "WrapParams",
-    error = "ContractError",
-    enable_logger,
-    mutable,
-    payable
-)]
-fn contract_wrap<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-    amount: Amount,
-    logger: &mut impl HasLogger,
-) -> ContractResult<()> {
-    // Check that contract is not paused.
-    ensure!(
-        !host.state().paused,
-        ContractError::Custom(CcdSwapContractError::ContractPaused)
-    );
-
-    // Parse the parameter.
-    let params: SwapParams = ctx.parameter_cursor().get()?;
-    // Get the sender who invoked this contract function.
-    let sender = ctx.sender();
-
-    let receive_address = params.to.address();
-
-    let (state, state_builder) = host.state_and_builder();
-    // Update the state.
-    state.mint(
-        &TOKEN_ID_LIQ,
-        (amount.micro_ccd as u64).into(),
-        &receive_address,
-        state_builder,
-    )?;
-
-    // Log the newly minted tokens.
-    logger.log(&CcdSwapEvent::SwapCis2Event(Cis2Event::Mint(MintEvent {
-        token_id: TOKEN_ID_LIQ,
-        amount: ContractTokenAmount::from(amount.micro_ccd as u64),
-        owner: sender,
-    })))?;
-
-    // Only logs a transfer event if the receiver is not the sender.
-    // Only executes the `OnReceivingCis2` hook if the receiver is not the sender
-    // and the receiver is a contract.
-    if sender != receive_address {
-        logger.log(&CcdSwapEvent::SwapCis2Event(Cis2Event::Transfer(
-            TransferEvent {
-                token_id: TOKEN_ID_LIQ,
-                amount: ContractTokenAmount::from(amount.micro_ccd as u64),
-                from: sender,
-                to: receive_address,
-            },
-        )))?;
-
-        // If the receiver is a contract: invoke the receive hook function.
-        if let Receiver::Contract(address, function) = params.to {
-            let parameter = OnReceivingCis2Params {
-                token_id: TOKEN_ID_LIQ,
-                amount: ContractTokenAmount::from(amount.micro_ccd as u64),
-                from: sender,
-                data: params.data,
-            };
-            host.invoke_contract(
-                &address,
-                &parameter,
-                function.as_entrypoint_name(),
-                Amount::zero(),
-            )?;
-        }
-    }
-    Ok(())
-}
-
 /// Swap an amount of CCD into tokenA tokens and transfer the tokens if the sender
 /// is not the receiver.
 #[receive(
     contract = "ccd_swap",
-    name = "swap_for_tokenA",
+    name = "swap_ccd_for_tokenA",
     parameter = "SwapParams",
     error = "ContractError",
     enable_logger,
@@ -747,65 +786,39 @@ fn contract_swap_ccd_to_token_a<S: HasStateApi>(
     );
 
     // Parse the parameter.
-    let params: SwapParams = ctx.parameter_cursor().get()?;
-
+    let params: CcdSwapParams = ctx.parameter_cursor().get()?;
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
 
     let receive_address = params.to.address();
     let bal = host.self_balance().micro_ccd;
-    let (state, state_builder) = host.state_and_builder();
+    let (state, _state_builder) = host.state_and_builder();
 
-    println!("==================> befor reserve A {}", state.reserve_a);
-    println!(
-        "==================> before reserve CCD {}",
-        state.reserve_ccd
-    );
-    println!("==================> befor k last {}", state.k_last);
     let k = state.k_last;
-    //[TODO] find price and convert
     let a = amount.micro_ccd as u128;
     let res_ccd = state.reserve_ccd as u128;
-    let res_a = state.reserve_a as u128;
-    println!("==================> swap ccd amount {}", a);
     const DECI: u128 = 1_000_000_000u128; // two decimals more for correct operation over mCdd
     let alpha: u128 = a * DECI / res_ccd;
-    println!("==================> swap alpha {}", alpha);
     let beta = alpha * DECI / (alpha + DECI);
-    println!("==================> swap beta {}", beta);
     let mut to_send = beta * (state.reserve_a as u128);
-    println!("==================> swap to send  no fees {}", to_send);
-    println!(
-        "==================>  fees {}",
-        (state.fee_liquidity_provider + state.fee_protocol) as u128
-    );
     to_send -=
         to_send * ((state.fee_liquidity_provider + state.fee_protocol) as u128) / 1_000_000u128;
-    println!("==================> swap to send  with fees {}", to_send);
 
     // Update the state. and check bal
     state.reserve_ccd += a as u64;
     state.reserve_a -= (to_send / DECI) as u64;
     state.k_last = (state.reserve_a as u128) * (state.reserve_ccd as u128);
-    let actual = state.reserve_a * state.reserve_ccd;
 
-    println!("==================> state res Ccd {}", state.reserve_ccd);
-    println!("==================> state res A {}", state.reserve_a);
-    println!("==================> state k last {}", state.k_last);
-    println!("==================> state k actual {}", actual);
-    println!("==================> state k before {}", k);
     ensure!(
         k <= state.k_last,
         ContractError::Custom(CcdSwapContractError::FailedCcdSwap)
     );
-    println!("==================> state bal before {}", bal);
     ensure!(
         bal == state.reserve_ccd,
         ContractError::Custom(CcdSwapContractError::FailedCcdSwap)
     );
 
     let tok_a_contract_addr = ContractAddress::from(state.contract_token_a);
-    let id = state.token_a;
     let my_addr = Address::Contract(ctx.self_address());
 
     logger.log(&CcdSwapEvent::SwapCcdEvent(Cis2Event::Transfer(
@@ -820,16 +833,18 @@ fn contract_swap_ccd_to_token_a<S: HasStateApi>(
     match ctx.sender() {
         Address::Account(addr) => {
             let rcv = Receiver::Account(addr);
-            let parameter = TransferParam {
-                token_id: id,
+            let v_tp = vec![TransferParam {
+                token_id: state.token_a,
                 amount: ContractTokenAAmount::from((to_send / DECI) as u64),
                 from: my_addr,
                 to: rcv,
                 data: AdditionalData::empty(),
-            };
+            }];
+            // make token transfert
+            let t_params = TransferParams(v_tp);
             host.invoke_contract(
                 &tok_a_contract_addr,
-                &parameter,
+                &t_params,
                 EntrypointName::new_unchecked("transfer"),
                 Amount::zero(),
             )?;
@@ -842,16 +857,17 @@ fn contract_swap_ccd_to_token_a<S: HasStateApi>(
     Ok(())
 }
 
-/// Unwrap an amount of wCCD tokens into CCD
+// Swap an amount of CCD into tokenA tokens and transfer the tokens
+/// fials if the sender is not the receiver in params.
 #[receive(
     contract = "ccd_swap",
-    name = "unwrap",
-    parameter = "UnwrapParams",
+    name = "swap_token_a_for_ccd",
+    parameter = "TokenASwapParams",
     error = "ContractError",
     enable_logger,
     mutable
 )]
-fn contract_unwrap<S: HasStateApi>(
+fn contract_swap_token_a_to_ccd<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
@@ -861,44 +877,255 @@ fn contract_unwrap<S: HasStateApi>(
         !host.state().paused,
         ContractError::Custom(CcdSwapContractError::ContractPaused)
     );
-
     // Parse the parameter.
-    let params: UnwrapParams = ctx.parameter_cursor().get()?;
+    let params: TokenASwapParams = ctx.parameter_cursor().get()?;
+    let amount = params.amount;
+    let a_: u64 = amount.into();
 
     // Get the sender who invoked this contract function.
-    let sender = ctx.sender();
-    let state = host.state_mut();
-
-    // Authenticate the sender
+    // should be the receiver
+    let receive_address = params.to.address();
     ensure!(
-        sender == params.owner || state.is_operator(&sender, &params.owner),
-        ContractError::Unauthorized
+        receive_address == ctx.sender(),
+        ContractError::Custom(CcdSwapContractError::FailedCcdSwap)
     );
 
-    // Update the state.
-    state.burn(&TOKEN_ID_LIQ, params.amount, &params.owner)?;
+    // this contract is an operator for this address
+    let tok_a_contract_addr = host.state().contract_token_a;
+    let token_a_id = host.state().token_a;
+    let my_addr = Address::Contract(ctx.self_address());
 
-    // Log the burning of tokens.
-    logger.log(&CcdSwapEvent::SwapCis2Event(Cis2Event::Burn(BurnEvent {
-        token_id: TOKEN_ID_LIQ,
-        amount: params.amount,
-        owner: params.owner,
-    })))?;
+    let op_of_v = vec![OperatorOfQuery {
+        owner: ctx.sender(),
+        address: my_addr,
+    }];
+    let op_of_params = OperatorOfQueryParams { queries: op_of_v };
 
-    let unwrapped_amount = Amount::from_micro_ccd(params.amount.into());
+    let mut response = Vec::with_capacity(1);
 
-    // Transfer the CCD to the receiver
-    match params.receiver {
-        Receiver::Account(address) => host.invoke_transfer(&address, unwrapped_amount)?,
-        Receiver::Contract(address, function) => {
-            host.invoke_contract(
-                &address,
-                &params.data,
-                function.as_entrypoint_name(),
-                unwrapped_amount,
-            )?;
+    if let Address::Account(_) = ctx.sender() {
+        let _res = host.invoke_contract(
+            &tok_a_contract_addr,
+            &op_of_params,
+            EntrypointName::new_unchecked("operatorOf"),
+            Amount::zero(),
+        );
+        match _res {
+            Ok(v) => response.push(v.1.unwrap_abort()),
+            Err(e) => {
+                println!("[ERROR] ======================================> {e:#?}");
+                bail!(ContractError::Custom(CcdSwapContractError::FailedTokenASwap).into());
+            }
         }
+    } else {
+        bail!(
+            ContractError::Custom(CcdSwapContractError::FailedTokenASwapContractCannotSwap).into()
+        );
     }
+
+    let result_is_operator: Result<OperatorOfQueryResponse, ParseError> =
+        response.pop().unwrap_abort().get();
+    // let mut is_contract_operator = false;
+    if let Ok(resp_) = result_is_operator {
+        if resp_.0[0] == false {
+            bail!(ContractError::Custom(CcdSwapContractError::FailedTokenASwap).into());
+        }
+    } else {
+        bail!(ContractError::Custom(CcdSwapContractError::FailedTokenASwap).into());
+    }
+
+    // make token transfert
+    let v_tp = vec![Transfer {
+        token_id: token_a_id,
+        amount: amount,
+        from: ctx.sender(),
+        to: Receiver::Contract(
+            ctx.self_address(),
+            OwnedEntrypointName::new_unchecked("onReceivingCIS2".to_string()),
+        ),
+        data: AdditionalData::empty(),
+    }];
+    let t_params = TransferParams(v_tp);
+    host.invoke_contract(
+        &tok_a_contract_addr,
+        &t_params,
+        EntrypointName::new_unchecked("transfer"),
+        Amount::zero(),
+    )?;
+
+    // end transfert
+
+    let a: u128 = a_ as u128;
+    let res_ccd = host.state().reserve_ccd as u128;
+    let res_a = host.state().reserve_a as u128;
+
+    let beta: u128 = a * DECI / res_a;
+    let alpha: u128 = beta * DECI / (DECI + beta);
+    let mut to_send = alpha * res_ccd;
+
+    to_send -= to_send
+        * ((host.state().fee_liquidity_provider + host.state().fee_protocol) as u128)
+        / 1_000_000u128;
+
+    host.state_mut().reserve_a += a_;
+    host.state_mut().reserve_ccd -= (to_send / DECI) as u64;
+    let k_new = (host.state().reserve_a as u128) * (host.state().reserve_ccd as u128);
+    host.state_mut().k_last = k_new;
+
+    let amount_send = Amount::from_micro_ccd((to_send / DECI) as u64);
+    if let Address::Account(addr) = ctx.sender() {
+        host.invoke_transfer(&addr, amount_send)?;
+    }
+
+    logger.log(&CcdSwapEvent::SwapTokenAEvent(SwapTokenAForCcdEvent {
+        amount: amount_send,
+        receiver: receive_address,
+    }))?;
+
+    Ok(())
+}
+
+/// Adds liquidity to the swap pool
+///
+#[receive(
+    contract = "ccd_swap",
+    name = "add_liquidity",
+    parameter = "AddLiquidityParams",
+    error = "ContractError",
+    enable_logger,
+    payable,
+    mutable
+)]
+
+fn contract_add_liquidity<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    amount: Amount,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    // Check that contract is not paused.
+    ensure!(
+        !host.state().paused,
+        ContractError::Custom(CcdSwapContractError::ContractPaused)
+    );
+    // Parse the parameter.
+    let params: AddLiquidityParams = ctx.parameter_cursor().get()?;
+    let amount_tok_a = params.amount;
+    let a_: u64 = amount_tok_a.into();
+
+    // Get the sender who invoked this contract function.
+    // should be the receiver
+    let receive_address = params.to.address();
+    ensure!(
+        receive_address == ctx.sender(),
+        ContractError::Custom(CcdSwapContractError::FailedCcdSwap)
+    );
+
+    // this contract is an operator for this address
+    let tok_a_contract_addr = host.state().contract_token_a;
+    let token_a_id = host.state().token_a;
+    let my_addr = Address::Contract(ctx.self_address());
+
+    let op_of_v = vec![OperatorOfQuery {
+        owner: ctx.sender(),
+        address: my_addr,
+    }];
+    let op_of_params = OperatorOfQueryParams { queries: op_of_v };
+
+    let mut response = Vec::with_capacity(1);
+
+    if let Address::Account(_) = ctx.sender() {
+        let _res = host.invoke_contract(
+            &tok_a_contract_addr,
+            &op_of_params,
+            EntrypointName::new_unchecked("operatorOf"),
+            Amount::zero(),
+        );
+        match _res {
+            Ok(v) => response.push(v.1.unwrap_abort()),
+            Err(e) => {
+                println!("[ERROR] ======================================> {e:#?}");
+                bail!(ContractError::Custom(CcdSwapContractError::FailedTokenASwap).into());
+            }
+        }
+    } else {
+        bail!(
+            ContractError::Custom(CcdSwapContractError::FailedTokenASwapContractCannotSwap).into()
+        );
+    }
+
+    let result_is_operator: Result<OperatorOfQueryResponse, ParseError> =
+        response.pop().unwrap_abort().get();
+    // let mut is_contract_operator = false;
+    if let Ok(resp_) = result_is_operator {
+        if resp_.0[0] == false {
+            bail!(ContractError::Custom(CcdSwapContractError::FailedTokenASwap).into());
+        }
+    } else {
+        bail!(ContractError::Custom(CcdSwapContractError::FailedTokenASwap).into());
+    }
+
+    // make token transfert
+    let v_tp = vec![Transfer {
+        token_id: token_a_id,
+        amount: amount_tok_a,
+        from: ctx.sender(),
+        to: Receiver::Contract(
+            ctx.self_address(),
+            OwnedEntrypointName::new_unchecked("onReceivingCIS2".to_string()),
+        ),
+        data: AdditionalData::empty(),
+    }];
+    let t_params = TransferParams(v_tp);
+    host.invoke_contract(
+        &tok_a_contract_addr,
+        &t_params,
+        EntrypointName::new_unchecked("transfer"),
+        Amount::zero(),
+    )?;
+
+    // end transfert
+
+    let (state, state_builder) = host.state_and_builder();
+
+    // check if initial reserves
+    if (state.reserve_ccd == 0) && (state.reserve_a == 0) {
+        // mint initial token
+        // Update the state.
+        let a_: u64 = amount_tok_a.into();
+        let liq_init: u64 = sqrt_u64((a_ as u128) * (amount.micro_ccd as u128));
+        state.mint(
+            &TOKEN_ID_LIQ,
+            (liq_init).into(),
+            &receive_address,
+            state_builder,
+        )?;
+        // update reserves
+        state.reserve_a = a_;
+        state.reserve_ccd = amount.micro_ccd;
+    } else {
+        let liq_init: u64 = sqrt_u64((state.reserve_a as u128) * (state.reserve_ccd as u128));
+        let liq_mint: u64 = amount.micro_ccd * liq_init / state.reserve_ccd;
+        state.mint(
+            &TOKEN_ID_LIQ,
+            (liq_mint).into(),
+            &receive_address,
+            state_builder,
+        )?;
+        // update reserves
+        state.reserve_a += a_;
+        state.reserve_ccd += amount.micro_ccd;
+    }
+
+    // update klast
+    state.k_last = (state.reserve_a as u128) * (state.reserve_ccd as u128);
+
+    // log
+    logger.log(&CcdSwapEvent::AddLiquity(AddLiquidityEvent {
+        amount_a: amount_tok_a,
+        amount_ccd: amount,
+        receiver: receive_address,
+    }))?;
 
     Ok(())
 }
@@ -1393,6 +1620,176 @@ fn contract_upgrade<S: HasStateApi>(
             Amount::zero(),
         )?;
     }
+    Ok(())
+}
+
+/// Example of implementing a function for receiving transfers.
+/// It is not required to be implemented by the token contract, but is required
+/// to implement such a function by any contract which should receive CIS2
+/// tokens.
+///
+/// This contract function is called when a token is transferred to an instance
+/// of this contract and should only be called by a contract implementing CIS2.
+/// The parameter include a `data` field which can be used to
+/// implement some arbitrary functionality. In this example we choose not to use
+/// it, and define the function to forward any transfers to the owner of the
+/// contract instance.
+///
+/// Note: The name of this function is not part the CIS2, and a contract can
+/// have multiple functions for receiving tokens.
+///
+/// It rejects if:
+/// - Sender is not a contract.
+/// - It fails to parse the parameter.
+/// - Contract name part of the parameter is invalid.
+/// - Calling back `transfer` to sender contract rejects.
+#[receive(
+    contract = "ccd_swap",
+    name = "onReceivingCIS2",
+    error = "ContractError"
+)]
+fn contract_on_cis2_received<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    // Ensure the sender is a contract.
+    let sender = if let Address::Contract(contract) = ctx.sender() {
+        contract
+    } else {
+        bail!(Cis2Error::Custom(CcdSwapContractError::OnlyContract))
+    };
+
+    // Parse the parameter.
+    let params: OnReceivingCis2Params<ContractTokenId, ContractTokenAmount> =
+        ctx.parameter_cursor().get()?;
+
+    // Build the transfer from this contract to the contract owner.
+    let transfer = Transfer {
+        token_id: params.token_id,
+        amount: params.amount,
+        from: Address::Contract(ctx.self_address()),
+        to: Receiver::from_account(ctx.owner()),
+        data: AdditionalData::empty(),
+    };
+
+    let parameter = TransferParams::from(vec![transfer]);
+
+    // Send back a transfer
+    host.invoke_contract_read_only(
+        &sender,
+        &parameter,
+        EntrypointName::new_unchecked("transfer"),
+        Amount::zero(),
+    )?;
+    Ok(())
+}
+
+/// fails if reciever is a contract
+#[receive(
+    contract = "ccd_swap",
+    name = "remove_liq",
+    parameter = "RemoveLiqParams",
+    error = "ContractError",
+    enable_logger,
+    mutable
+)]
+fn contract_remove_liquidity<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    // Check that contract is not paused.
+    ensure!(
+        !host.state().paused,
+        ContractError::Custom(CcdSwapContractError::ContractPaused)
+    );
+
+    // Parse the parameter.
+    let params: RemoveLiqParams = ctx.parameter_cursor().get()?;
+    let contract_tok_a = ContractAddress::from(host.state().contract_token_a);
+    let token_a_id = host.state().token_a;
+
+    // Get the sender who invoked this contract function.
+    let sender = ctx.sender();
+    let state = host.state_mut();
+
+    // Authenticate the sender
+    ensure!(
+        sender == params.owner || state.is_operator(&sender, &params.owner),
+        ContractError::Unauthorized
+    );
+
+    // Fails is receiver is a contract
+    if let Receiver::Contract(_addr, _functi) = params.receiver {
+        bail!(ContractError::Custom(CcdSwapContractError::RemoveLiqFail).into());
+    }
+
+    // burn liq first
+    state.burn(&TOKEN_ID_LIQ, params.amount, &params.owner)?;
+
+    // Log the burning of tokens.
+    logger.log(&CcdSwapEvent::SwapCis2Event(Cis2Event::Burn(BurnEvent {
+        token_id: TOKEN_ID_LIQ,
+        amount: params.amount,
+        owner: params.owner,
+    })))?;
+
+    // compute ccd to send
+    let amount_liq: u64 = params.amount.into();
+    let total_liq = sqrt_u64(state.k_last);
+    let ccd_amount: u64 =
+        ((amount_liq as u128) * (state.reserve_ccd as u128) / (total_liq as u128)) as u64;
+    let tok_a_amount: u64 =
+        ((amount_liq as u128) * (state.reserve_a as u128) / (total_liq as u128)) as u64;
+
+    // update state
+    state.reserve_ccd -= ccd_amount;
+    state.reserve_a -= tok_a_amount;
+    state.k_last = (state.reserve_a as u128) * (state.reserve_ccd as u128);
+
+    // Transfer the CCD to the receiver
+
+    match params.receiver {
+        Receiver::Account(address) => {
+            host.invoke_transfer(&address, Amount::from_micro_ccd(ccd_amount))?;
+        }
+        Receiver::Contract(_address, _function) => {
+            bail!(ContractError::Custom(CcdSwapContractError::FailedCcdSwap).into());
+            // host.invoke_contract(
+            //     &address,
+            //     &params.data,
+            //     function.as_entrypoint_name(),
+            //     Amount::from_micro_ccd(ccd_amount),
+            // )?;
+        }
+    }
+
+    // transfer token A to reciever
+
+    match params.receiver {
+        Receiver::Account(_addr) => {
+            //let rcv = Receiver::Account(addr);
+            let v_tp = vec![TransferParam {
+                token_id: token_a_id,
+                amount: ContractTokenAAmount::from(tok_a_amount),
+                from: Address::from(ctx.owner()),
+                to: params.receiver,
+                data: AdditionalData::empty(),
+            }];
+            // make token transfert
+            let t_params = TransferParams(v_tp);
+            host.invoke_contract(
+                &contract_tok_a,
+                &t_params,
+                EntrypointName::new_unchecked("transfer"),
+                Amount::zero(),
+            )?;
+        }
+        Receiver::Contract(_addr, _functi) => {
+            bail!(ContractError::Custom(CcdSwapContractError::RemoveLiqFail).into());
+        }
+    }
+
     Ok(())
 }
 
@@ -1946,138 +2343,12 @@ mod tests {
 
     /// Test wrap and unwrap functions.
     #[concordium_test]
-    fn test_wrap_and_unwrap() {
-        // Set up the context.
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_1);
-
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Set up the parameter.
-        let wrap_params = SwapParams {
-            to: Receiver::from_account(ACCOUNT_1),
-            data: AdditionalData::empty(),
-        };
-        let parameter_bytes = to_bytes(&wrap_params);
-        ctx.set_parameter(&parameter_bytes);
-
-        let amount = 100;
-
-        // Testing the `wrap` function
-
-        // ADDRESS_1 wraps some CCD.
-        let result: ContractResult<()> =
-            contract_wrap(&ctx, &mut host, Amount::from_micro_ccd(amount), &mut logger);
-
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check the wCCD balance of ADDRESS_1.
-        let balance0 = host
-            .state()
-            .balance(&TOKEN_ID_LIQ, &ADDRESS_1)
-            .expect_report("Token is expected to exist");
-        claim_eq!(
-            balance0,
-            ContractTokenAmount::from(amount),
-            "ADDRESS_1 should have received wCCD tokens"
-        );
-
-        // Testing the `unwrap` function
-
-        // Set up the parameter.
-        let unwrap_params = UnwrapParams {
-            amount: ContractTokenAmount::from(amount),
-            owner: ADDRESS_1,
-            receiver: Receiver::from_account(ACCOUNT_1),
-            data: AdditionalData::empty(),
-        };
-        let parameter_bytes = to_bytes(&unwrap_params);
-        ctx.set_parameter(&parameter_bytes);
-
-        host.set_self_balance(Amount::from_micro_ccd(amount));
-
-        // ADDRESS_1 unwraps some wCCD.
-        let result: ContractResult<()> = contract_unwrap(&ctx, &mut host, &mut logger);
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check the wCCD balance of ADDRESS_1.
-        let balance0 = host
-            .state()
-            .balance(&TOKEN_ID_LIQ, &ADDRESS_1)
-            .expect_report("Token is expected to exist");
-
-        claim_eq!(
-            balance0,
-            ContractTokenAmount::from(0),
-            "ADDRESS_1 should have no WCCD tokens anymore"
-        );
-    }
-
-    /// Test unwrapping to a receiver account that doesn't exist.
-    ///
-    /// This test also showcases the use of [`TestHost::with_rollback`],
-    /// which handles rolling back the state if a receive function rejects.
-    #[concordium_test]
-    fn test_unwrap_to_missing_account() {
-        // Set up the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_0);
-
-        // Set up the parameter.
-        let parameter = UnwrapParams {
-            amount: ContractTokenAmount::from(100),
-            owner: ADDRESS_0,
-            receiver: Receiver::from_account(ACCOUNT_1),
-            data: AdditionalData::empty(),
-        };
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Make ACCOUNT_1 missing such that transfers to it will fail.
-        host.make_account_missing(ACCOUNT_1);
-
-        // Call the contract function. Note the use of `with_rollback`.
-        let result: ContractResult<()> =
-            host.with_rollback(|host| contract_unwrap(&ctx, host, &mut logger));
-
-        claim_eq!(
-            result,
-            Err(ContractError::Custom(
-                CcdSwapContractError::InvokeTransferError
-            )),
-            "InvokeTransferError should have occurred"
-        );
-
-        // The balance should still be 400 due to the rollback after rejecting.
-        claim_eq!(
-            host.state().balance(&TOKEN_ID_LIQ, &ADDRESS_0),
-            Ok(LIQ_INIT.into()),
-            "ADDRESS_0 balance should still be 400"
-        );
-        claim!(
-            host.get_transfers().is_empty(),
-            "No transfers should have happened"
-        );
-    }
-    /// Test wrap and unwrap functions.
-    #[concordium_test]
-    fn test_swap_function() {
-
+    fn test_swap_ccd_function() {
         // compute expected values for an amount
         let amount = 100_000_000u64;
         let expected = compute_swap_values(RESERVE_CCD_INIT, RESERVE_A_INIT, amount, 0.003);
         expected.display();
-        
+
         // Set up the context.
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_1);
@@ -2098,18 +2369,25 @@ mod tests {
             OwnedEntrypointName::new_unchecked("transfer".to_string()),
             MockFn::new_v1(
                 |parameter: Parameter, amount, _balance, _state: &mut State<TestStateApi>| {
-                    let tp: TransferParam = match from_bytes(parameter.as_ref()) {
-                        Ok(n) => n,
-                        Err(_) => return Err(CallContractError::Trap),
-                    };
+                    let tp: TransferParams<ContractTokenAId, ContractTokenAAmount> =
+                        match from_bytes(parameter.as_ref()) {
+                            Ok(n) => n,
+                            Err(e) => {
+                                println!(
+                                    "\n\n Morck [EEROR] ==================> swap ccd error {:#?}",
+                                    e
+                                );
+                                return Err(CallContractError::Trap);
+                            }
+                        };
 
                     if amount.micro_ccd > 0 {
                         println!("Mock amount in mccd ==============> {}", amount.micro_ccd);
                         return Err(CallContractError::Trap);
                     }
 
-                    if EXPECTED_TOKENS != tp.amount.into() {
-                        println!("Mock amount in mccd ==============> {:?}", tp.amount);
+                    if EXPECTED_TOKENS != tp.0[0].amount.into() {
+                        println!("Mock amount in mccd ==============> {:?}", tp.0[0].amount);
                         return Err(CallContractError::Trap);
                     }
 
@@ -2121,7 +2399,7 @@ mod tests {
             ),
         );
         // Set up the parameter.
-        let swap_params = SwapParams {
+        let swap_params = CcdSwapParams {
             to: Receiver::from_account(ACCOUNT_1),
             data: AdditionalData::empty(),
         };
@@ -2141,11 +2419,343 @@ mod tests {
             &mut logger,
         );
 
+
         claim!(result.is_ok(), "Results in rejection");
 
         // check state
         let k = host.state().k_last;
         claim_eq!(k, EXPECTED_KLAST, "wrong K!");
+    }
+
+    #[concordium_test]
+    fn test_swap_token_a_function() {
+        // compute expected values for an amount
+        let amount = 18_000_000u64;
+        let expected = compute_swap_values(RESERVE_CCD_INIT, RESERVE_A_INIT, amount, 0.003);
+        expected.display();
+
+        // Set up the context.
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_1);
+        ctx.set_self_address(CONTRACT_ADDRESS);
+
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+
+        const EXPECTED_TOKENS: u64 = 18_000_000u64;
+        const EXPECTED_KLAST: u128 = 160540000004000000u128;
+
+        let mut host = TestHost::new(state, state_builder);
+
+        host.set_self_balance(Amount::from_micro_ccd(RESERVE_CCD_INIT));
+
+        // mock operator of
+        host.setup_mock_entrypoint(
+            CONTRAT_TOK_A_ADDRESS,
+            OwnedEntrypointName::new_unchecked("operatorOf".to_string()),
+            MockFn::new_v1(
+                |parameter: Parameter, amount, _balance, _state: &mut State<TestStateApi>| {
+                    let tp: OperatorOfQueryParams = match from_bytes(parameter.as_ref()) {
+                        Ok(bq) => {
+                            bq
+                        }
+                        Err(_e) => {
+                            return Err(CallContractError::Trap);
+                        }
+                    };
+                    if amount.micro_ccd > 0 {
+                        println!(
+                            "\n [Mock-operatorOf] ===================> {}",
+                            amount.micro_ccd
+                        );
+                        return Err(CallContractError::Trap);
+                    }
+
+                    let mut _is_op = false;
+                    if let Address::Contract(addr) = tp.queries[0].address {
+                        if addr == CONTRACT_ADDRESS {
+                            _is_op = true;
+                        } else {
+                            _is_op = false;
+                        }
+                    } else {
+                        return Err(CallContractError::Trap);
+                    }
+
+                    let state_modified = false; // Mock did not modify the state.
+                    let v = vec![_is_op];
+                    let resp = OperatorOfQueryResponse(v);
+                    Ok((state_modified, resp))
+                },
+            ),
+        );
+        // mock transfer
+        host.setup_mock_entrypoint(
+            CONTRAT_TOK_A_ADDRESS,
+            OwnedEntrypointName::new_unchecked("transfer".to_string()),
+            MockFn::new_v1(
+                |parameter: Parameter, amount, _balance, _state: &mut State<TestStateApi>| {
+                    let tp: TransferParams<ContractTokenAId, ContractTokenAAmount> =
+                        match from_bytes(parameter.as_ref()) {
+                            Ok(n) => n,
+                            Err(e) => {
+                                println!("error in trf {e}");
+                                return Err(CallContractError::Trap);
+                            }
+                        };
+
+                    if amount.micro_ccd > 0 {
+                        println!(
+                            "Mock amount in mccd ==============> {} should be 0",
+                            amount.micro_ccd
+                        );
+                        return Err(CallContractError::Trap);
+                    }
+
+                    if EXPECTED_TOKENS != tp.0[0].amount.into() {
+                        println!("Mock amount in mccd ==============> {:?}", tp.0[0].amount);
+                        return Err(CallContractError::Trap);
+                    }
+
+                    let state_modified = false; // Mock did not modify the state.
+
+                    //Ok((state_modified, n + 1))
+                    Ok((state_modified, tp))
+                },
+            ),
+        );
+
+        // Set up the parameter.
+        let swap_params = TokenASwapParams {
+            to: Receiver::from_account(ACCOUNT_1),
+            data: AdditionalData::empty(),
+            amount: ContractTokenAAmount::from(amount),
+        };
+        let parameter_bytes = to_bytes(&swap_params);
+        ctx.set_parameter(&parameter_bytes);
+
+        host.set_self_balance(Amount::from_micro_ccd(RESERVE_CCD_INIT + amount));
+
+        // Testing the `swap` function
+
+        // ADDRESS_1 wraps some CCD.
+
+        let result: ContractResult<()> = contract_swap_token_a_to_ccd(&ctx, &mut host, &mut logger);
+        claim!(result.is_ok(), "Results in rejection");
+
+        // check state
+        let k = host.state().k_last;
+        claim_eq!(k, EXPECTED_KLAST, "wrong K!");
+    }
+
+    #[concordium_test]
+    fn test_add_remove_liq_function() {
+        // compute expected values for an amount
+        const EXPECTED_TOKENS: u64 = 32_000_000u64;
+        const EXPECTED_KLAST: u128 = 1440000000000000000u128;
+        const EXPECTED_BAL: u64 = 800000000u64;
+        let amount_tok_a = 32_000_000u64;
+        let amount_ccd = 20_000_000_000u64;
+        let expected = compute_swap_values(RESERVE_CCD_INIT, RESERVE_A_INIT, amount_tok_a, 0.003);
+        expected.display();
+
+        // Set up the context.
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_1);
+        ctx.set_self_address(CONTRACT_ADDRESS);
+
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+
+        let mut host = TestHost::new(state, state_builder);
+
+        host.set_self_balance(Amount::from_micro_ccd(RESERVE_CCD_INIT));
+
+        // mock operator of
+        host.setup_mock_entrypoint(
+            CONTRAT_TOK_A_ADDRESS,
+            OwnedEntrypointName::new_unchecked("operatorOf".to_string()),
+            MockFn::new_v1(
+                |parameter: Parameter, amount, _balance, _state: &mut State<TestStateApi>| {
+                    let tp: OperatorOfQueryParams = match from_bytes(parameter.as_ref()) {
+                        Ok(bq) => {
+                            bq
+                        }
+                        Err(_e) => {
+                            return Err(CallContractError::Trap);
+                        }
+                    };
+                    if amount.micro_ccd > 0 {
+                        println!(
+                            "\n [Mock-operatorOf] ===================> {}",
+                            amount.micro_ccd
+                        );
+                        return Err(CallContractError::Trap);
+                    }
+
+                    let mut _is_op = false;
+                    if let Address::Contract(addr) = tp.queries[0].address {
+                        if addr == CONTRACT_ADDRESS {
+                            _is_op = true;
+                        } else {
+                            _is_op = false;
+                        }
+                    } else {
+                        return Err(CallContractError::Trap);
+                    }
+
+                    let state_modified = false; // Mock did not modify the state.
+                    let v = vec![_is_op];
+                    let resp = OperatorOfQueryResponse(v);
+                    Ok((state_modified, resp))
+                },
+            ),
+        );
+        // mock transfer
+        host.setup_mock_entrypoint(
+            CONTRAT_TOK_A_ADDRESS,
+            OwnedEntrypointName::new_unchecked("transfer".to_string()),
+            MockFn::new_v1(
+                |parameter: Parameter, amount, _balance, _state: &mut State<TestStateApi>| {
+                    let tp: TransferParams<ContractTokenAId, ContractTokenAAmount> =
+                        match from_bytes(parameter.as_ref()) {
+                            Ok(n) => n,
+                            Err(e) => {
+                                println!("error in trf {e}");
+                                return Err(CallContractError::Trap);
+                            }
+                        };
+
+                    if amount.micro_ccd > 0 {
+                        println!(
+                            "Mock amount in mccd ==============> {} should be 0",
+                            amount.micro_ccd
+                        );
+                        return Err(CallContractError::Trap);
+                    }
+
+                    if EXPECTED_TOKENS != tp.0[0].amount.into() {
+                        println!(
+                            "Mock amount in mccd ==============> {:?} / EXPECTED {}",
+                            tp.0[0].amount, EXPECTED_TOKENS
+                        );
+                        return Err(CallContractError::Trap);
+                    }
+
+                    let state_modified = false; // Mock did not modify the state.
+                                                //Ok((state_modified, n + 1))
+                    Ok((state_modified, tp))
+                },
+            ),
+        );
+
+        // Set up the parameter.
+        let add_liq_params = AddLiquidityParams {
+            to: Receiver::from_account(ACCOUNT_1),
+            data: AdditionalData::empty(),
+            amount: ContractTokenAAmount::from(amount_tok_a),
+        };
+        let parameter_bytes = to_bytes(&add_liq_params);
+        ctx.set_parameter(&parameter_bytes);
+
+        host.set_self_balance(Amount::from_micro_ccd(RESERVE_CCD_INIT + amount_ccd));
+
+        let result_add: ContractResult<()> = contract_add_liquidity(
+            &ctx,
+            &mut host,
+            Amount::from_micro_ccd(amount_ccd),
+            &mut logger,
+        );
+        claim!(result_add.is_ok(), "Results in rejection");
+
+        // check state
+        let k = host.state().k_last;
+        let bal = host
+            .state()
+            .balance(&TOKEN_ID_LIQ, &Address::from(ACCOUNT_1));
+        claim!(bal.is_ok(), "bal results in rejection");
+        let bal_val: u64 = bal.unwrap().into();
+        claim_eq!(bal_val, EXPECTED_BAL, "bal is incorrect");
+
+        claim_eq!(
+            host.state().reserve_a,
+            RESERVE_A_INIT + amount_tok_a,
+            "balance is wrong fro troken A"
+        );
+        claim_eq!(
+            host.self_balance().micro_ccd,
+            host.state().reserve_ccd,
+            "balance is wrong for ccd"
+        );
+        claim_eq!(k, EXPECTED_KLAST, "wrong K!");
+
+        let bqv = vec![BalanceOfQuery {
+            token_id: TOKEN_ID_LIQ,
+            address: ADDRESS_1
+        }];
+        let bqs = ContractBalanceOfQueryParams{queries: bqv};
+        let parameter_bytes = to_bytes(&bqs);
+        ctx.set_parameter(&parameter_bytes);
+
+        let result_b_of = contract_balance_of(&ctx,&mut host);
+
+        claim!(result_b_of.is_ok(), "Remove liquidity bal of  rejected");
+        let val:u64 = result_b_of.unwrap().0[0].into();
+        let val_exp = 800000000u64;
+        claim_eq!(
+            val,
+            val_exp,
+            "\n ============== >  amount liq wrong {val} when {val_exp} expected\n"
+        );
+
+        // now try to remove liq
+        // Set up the parameter.
+        let rem_liq_params = RemoveLiqParams {
+            amount: ContractTokenAmount::from(bal_val),
+            owner: Address::Account(ACCOUNT_1),
+            receiver: Receiver::from_account(ACCOUNT_1),
+            data: AdditionalData::empty(),
+        };
+        ctx.set_owner(ACCOUNT_0);
+        ctx.set_sender(ADDRESS_1);
+        let parameter_bytes = to_bytes(&rem_liq_params);
+        ctx.set_parameter(&parameter_bytes);
+        let result_remove: ContractResult<()> =
+            contract_remove_liquidity(&ctx, &mut host, &mut logger);
+
+        claim!(result_remove.is_ok(), "Remove liquidity rejected");
+
+        // check bal
+        let s_bal = host.self_balance().micro_ccd;
+        let ccd_bal = host.state().reserve_ccd;
+        claim_eq!( s_bal, ccd_bal, "\n\n\n\n ============== > balance is wrong for ccd {s_bal} / {ccd_bal}");
+        // check  bal token a
+        let res_a =  host.state().reserve_a;
+        claim_eq!(
+            host.state().reserve_a,
+            RESERVE_A_INIT,
+            "\n ============== >  balance is wrong fro troken A {RESERVE_A_INIT} when {res_a}\n"
+        );
+        //check AACOUNT_1 bal 
+        let bqv = vec![BalanceOfQuery {
+            token_id: TOKEN_ID_LIQ,
+            address: ADDRESS_1
+        }];
+        let bqs = ContractBalanceOfQueryParams{queries: bqv};
+        let parameter_bytes = to_bytes(&bqs);
+        ctx.set_parameter(&parameter_bytes);
+        let result_b_of = contract_balance_of(&ctx,&mut host);
+
+        claim!(result_b_of.is_ok(), "Remove liquidity bal of  rejected");
+        let val:u64 = result_b_of.unwrap().0[0].into();
+        claim_eq!(
+            val,
+            0u64,
+            "\n ============== >  amount liq wrong {val} when 0 expected\n"
+        );
+
     }
     /// Test admin can update to a new admin address.
     #[concordium_test]
@@ -2385,27 +2995,6 @@ mod tests {
             result,
             Err(ContractError::Custom(CcdSwapContractError::ContractPaused)),
             "Update operator should fail because contract is paused"
-        );
-
-        // Call the `wrap` function.
-        let result: ContractResult<()> =
-            contract_wrap(&ctx, &mut host, Amount::from_micro_ccd(100), &mut logger);
-
-        // Check that invoke failed.
-        claim_eq!(
-            result,
-            Err(ContractError::Custom(CcdSwapContractError::ContractPaused)),
-            "Wrap should fail because contract is paused"
-        );
-
-        // Call the`unwrap` function.
-        let result: ContractResult<()> = contract_unwrap(&ctx, &mut host, &mut logger);
-
-        // Check that invoke failed.
-        claim_eq!(
-            result,
-            Err(ContractError::Custom(CcdSwapContractError::ContractPaused)),
-            "Unwrap should fail because contract is paused"
         );
     }
 }
