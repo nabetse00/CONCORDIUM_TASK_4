@@ -1,12 +1,11 @@
-//! Upgradable wCCD smart contract (Concordium's canonical wCCD
+//! Upgradable Swap tokenA to ccd  smart contract (Concordium's
 //! implementation following the CIS-2 standard)
 //!
 //! # Description
-//! The token in this contract is a wrapped CCD (wCCD), meaning it holds a one
-//! to one correspondence with the CCD. This smart contract can be
-//! paused/unpaused and upgraded by an admin address.
-//! Note: The word 'address' refers to either an account address or a
-//! contract address.
+//! This contract Swaps token A to ccd and ccd to token A
+//! with a constant product AMM.
+//!
+//! Liquidity token is minted when a user send token A and ccd.
 //!
 //! As follows from the CIS-2 specification, the contract has a `transfer`
 //! function for transferring an amount of a specific token type from one
@@ -14,21 +13,6 @@
 //! addresses as operators with the `updateOperator` function. An operator of
 //! some token owner address is allowed to transfer or unwrap any tokens of the
 //! owner.
-//!
-//! Besides the contract functions required by the CIS-2 standard, this contract
-//! implements a function `wrap` for converting CCD into wCCD tokens. It accepts
-//! an amount of CCD and mints this amount of wCCD tokens. The function requires
-//! a receiving address as an input parameter that receives the minted wCCD
-//! tokens.
-//!
-//! The contract also implements a contract function `unwrap` for converting
-//! wCCD back into CCD. The function takes the amount of tokens to unwrap, the
-//! address owning these wCCD and a receiver for the CCD. If the sender is the
-//! owner or an operator of the owner, the wCCD tokens are burned and the amount
-//! of CCD is sent to the receiver.
-//!
-//! There is a corresponding tutorial for this smart contract available here:
-//! https://developer.concordium.software/en/mainnet/smart-contracts/tutorials/wCCD/index.html
 //!
 //! The admin address can pause/unpause the protocol, set implementors, transfer
 //! the admin address to a new address, and update the metadata URL.
@@ -187,18 +171,8 @@ struct SwapTokenAParams {
 /// It includes a receiver for receiving the wrapped CCD tokens.
 #[derive(Serialize, SchemaType)]
 struct TokenASwapParams {
-    /// The address to receive these tokens.
-    /// If the receiver is the sender of the message wrapping the tokens, it
-    /// will not log a transfer event.
     to: Receiver,
     amount: ContractTokenAAmount,
-    /// Some additional data bytes are used in the `OnReceivingCis2` hook. Only
-    /// if the `Receiver` is a contract and the `Receiver` is not
-    /// the invoker of the wrap function the receive hook function is
-    /// executed. The `OnReceivingCis2` hook invokes the function entrypoint
-    /// specified in the `Receiver` with these additional data bytes as
-    /// part of the input parameters. This action allows the receiving smart
-    /// contract to react to the credited wCCD amount.
     data: AdditionalData,
 }
 
@@ -211,17 +185,8 @@ struct AddLiquidityParams {
 
 #[derive(Serialize, SchemaType)]
 struct CcdSwapParams {
-    /// The address to receive these tokens.
-    /// If the receiver is the sender of the message wrapping the tokens, it
-    /// will not log a transfer event.
     to: Receiver,
-    /// Some additional data bytes are used in the `OnReceivingCis2` hook. Only
-    /// if the `Receiver` is a contract and the `Receiver` is not
-    /// the invoker of the wrap function the receive hook function is
-    /// executed. The `OnReceivingCis2` hook invokes the function entrypoint
-    /// specified in the `Receiver` with these additional data bytes as
-    /// part of the input parameters. This action allows the receiving smart
-    /// contract to react to the credited wCCD amount.
+
     data: AdditionalData,
 }
 
@@ -341,9 +306,6 @@ impl Serial for CcdSwapEvent {
     }
 }
 
-/// Manual implementation of the `WccdEventSchema` which includes both the
-/// events specified in this contract and the events specified in the CIS-2
-/// library. The events are tagged to distinguish them on-chain.
 impl schema::SchemaType for CcdSwapEvent {
     fn get_type() -> schema::Type {
         let mut event_map = BTreeMap::new();
@@ -628,7 +590,7 @@ impl<S: HasStateApi> State<S> {
         });
     }
 
-    /// Mint an amount of wCCD tokens.
+    /// Mint an amount of Liquidity tokens.
     /// Results in an error if the token id does not exist in the state.
     fn mint(
         &mut self,
@@ -650,7 +612,7 @@ impl<S: HasStateApi> State<S> {
         Ok(())
     }
 
-    /// Burn an amount of wCCD tokens.
+    /// Burn an amount of Liquidity tokens.
     /// Results in an error if the token id does not exist in the state or if
     /// the owner address has insufficient tokens to do the burn.
     fn burn(
@@ -706,7 +668,7 @@ impl<S: HasStateApi> State<S> {
     contract = "ccd_swap",
     enable_logger,
     parameter = "SetMetadataUrlParams",
-    event = "WccdEvent"
+    event = "CcdSwapEvent"
 )]
 fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
@@ -767,7 +729,7 @@ fn contract_init<S: HasStateApi>(
 #[receive(
     contract = "ccd_swap",
     name = "swap_ccd_for_tokenA",
-    parameter = "SwapParams",
+    parameter = "CcdSwapParams",
     error = "ContractError",
     enable_logger,
     mutable,
@@ -1821,8 +1783,8 @@ mod tests {
     };
     //const CONTRAT_TOK_A_ADDRESS: Address = Address::Contract(CONTRAT_TOK_A_ACCOUNT);
 
-    // The metadata url for the wCCD token.
-    const INITIAL_TOKEN_METADATA_URL: &str = "https://some.example/token/ccds-toka-ccd";
+    // The metadata url for the Liquidity token.
+    const INITIAL_TOKEN_METADATA_URL: &str = "https://some.example/token/liqui-toka-ccd";
 
     const LIQ_INIT: u64 = 400_000_000u64;
     const K_INIT: u128 = (LIQ_INIT as u128).pow(2);
@@ -2022,7 +1984,7 @@ mod tests {
         ctx.set_sender(ADMIN_ADDRESS);
 
         // Create a new_url and a new_hash
-        let new_url = "https://some.example/token/wccd/updated".to_string();
+        let new_url = "https://some.example/token/liqui/updated".to_string();
         let new_hash = crypto_primitives.hash_sha2_256("document2".as_bytes()).0;
 
         // Set up the parameter.
@@ -2419,7 +2381,6 @@ mod tests {
             &mut logger,
         );
 
-
         claim!(result.is_ok(), "Results in rejection");
 
         // check state
@@ -2457,9 +2418,7 @@ mod tests {
             MockFn::new_v1(
                 |parameter: Parameter, amount, _balance, _state: &mut State<TestStateApi>| {
                     let tp: OperatorOfQueryParams = match from_bytes(parameter.as_ref()) {
-                        Ok(bq) => {
-                            bq
-                        }
+                        Ok(bq) => bq,
                         Err(_e) => {
                             return Err(CallContractError::Trap);
                         }
@@ -2580,9 +2539,7 @@ mod tests {
             MockFn::new_v1(
                 |parameter: Parameter, amount, _balance, _state: &mut State<TestStateApi>| {
                     let tp: OperatorOfQueryParams = match from_bytes(parameter.as_ref()) {
-                        Ok(bq) => {
-                            bq
-                        }
+                        Ok(bq) => bq,
                         Err(_e) => {
                             return Err(CallContractError::Trap);
                         }
@@ -2693,16 +2650,16 @@ mod tests {
 
         let bqv = vec![BalanceOfQuery {
             token_id: TOKEN_ID_LIQ,
-            address: ADDRESS_1
+            address: ADDRESS_1,
         }];
-        let bqs = ContractBalanceOfQueryParams{queries: bqv};
+        let bqs = ContractBalanceOfQueryParams { queries: bqv };
         let parameter_bytes = to_bytes(&bqs);
         ctx.set_parameter(&parameter_bytes);
 
-        let result_b_of = contract_balance_of(&ctx,&mut host);
+        let result_b_of = contract_balance_of(&ctx, &mut host);
 
         claim!(result_b_of.is_ok(), "Remove liquidity bal of  rejected");
-        let val:u64 = result_b_of.unwrap().0[0].into();
+        let val: u64 = result_b_of.unwrap().0[0].into();
         let val_exp = 800000000u64;
         claim_eq!(
             val,
@@ -2730,32 +2687,35 @@ mod tests {
         // check bal
         let s_bal = host.self_balance().micro_ccd;
         let ccd_bal = host.state().reserve_ccd;
-        claim_eq!( s_bal, ccd_bal, "\n\n\n\n ============== > balance is wrong for ccd {s_bal} / {ccd_bal}");
+        claim_eq!(
+            s_bal,
+            ccd_bal,
+            "\n\n\n\n ============== > balance is wrong for ccd {s_bal} / {ccd_bal}"
+        );
         // check  bal token a
-        let res_a =  host.state().reserve_a;
+        let res_a = host.state().reserve_a;
         claim_eq!(
             host.state().reserve_a,
             RESERVE_A_INIT,
             "\n ============== >  balance is wrong fro troken A {RESERVE_A_INIT} when {res_a}\n"
         );
-        //check AACOUNT_1 bal 
+        //check AACOUNT_1 bal
         let bqv = vec![BalanceOfQuery {
             token_id: TOKEN_ID_LIQ,
-            address: ADDRESS_1
+            address: ADDRESS_1,
         }];
-        let bqs = ContractBalanceOfQueryParams{queries: bqv};
+        let bqs = ContractBalanceOfQueryParams { queries: bqv };
         let parameter_bytes = to_bytes(&bqs);
         ctx.set_parameter(&parameter_bytes);
-        let result_b_of = contract_balance_of(&ctx,&mut host);
+        let result_b_of = contract_balance_of(&ctx, &mut host);
 
         claim!(result_b_of.is_ok(), "Remove liquidity bal of  rejected");
-        let val:u64 = result_b_of.unwrap().0[0].into();
+        let val: u64 = result_b_of.unwrap().0[0].into();
         claim_eq!(
             val,
             0u64,
             "\n ============== >  amount liq wrong {val} when 0 expected\n"
         );
-
     }
     /// Test admin can update to a new admin address.
     #[concordium_test]
