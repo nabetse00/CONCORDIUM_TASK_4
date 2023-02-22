@@ -1,0 +1,23 @@
+[package]
+name = "cis2_token"
+version = "0.1.0"
+authors = [ "nabetse00 <esteban.diezlaiz@gmail.com>" ]
+edition = "2018"
+license = "MPL-2.0"
+description = "simple cis2 token"
+
+[features]
+default = ["std"]
+std = ["concordium-std/std", "concordium-cis2/std"]
+wee_alloc = ["concordium-std/wee_alloc"]
+
+[dependencies]
+concordium-std = {version = "6.0", default-features = false}
+concordium-cis2 = {version = "3.0", default-features = false}
+
+[lib]
+crate-type=["cdylib", "rlib"]
+
+[profile.release]
+codegen-units = 1
+opt-level = "s"
