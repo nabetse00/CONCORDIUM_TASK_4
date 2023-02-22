@@ -7,8 +7,9 @@ license = "MPL-2.0"
 description = "simple cis2 token"
 
 [features]
-default = ["std"]
+default = ["std", "crypto-primitives", "wee_alloc"]
 std = ["concordium-std/std", "concordium-cis2/std"]
+crypto-primitives = ["concordium-std/crypto-primitives"]
 wee_alloc = ["concordium-std/wee_alloc"]
 
 [dependencies]
