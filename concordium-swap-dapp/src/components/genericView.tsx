@@ -1,5 +1,5 @@
 import { Descriptions } from 'antd';
-import { StateView } from '../contract/contractTypes'
+import { StateView } from '../contracts/contractTypes'
 
 
 export function StateViewCompoment(name: string, obj: StateView, amount: number) {

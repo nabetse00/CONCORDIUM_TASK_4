@@ -1,0 +1,29 @@
+[
+    {
+        "address": {
+            "Account": [
+                "45gPV394xxxQgeZkB4krVWoRtR1k9b4GdKnASgg5vzpuUTe7WJ"
+            ]
+        },
+        "token_id": "0100000000000000"
+    },
+    {
+        "address": {
+            "Account": [
+                "4Aw1taZUgVx4C8EEhsGWHcAbQ8rj5EiR3QQAFjhkCni3CeNSeu"
+            ]
+        },
+        "token_id": "0100000000000000"
+    },
+    {
+        "address":  {
+            "Contract": [
+                {
+                    "index": 3378,
+                    "subindex": 0
+                }
+            ]
+        },
+        "token_id": "0100000000000000"
+    }
+]

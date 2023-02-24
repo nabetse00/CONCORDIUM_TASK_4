@@ -47,7 +47,7 @@ export async function invokeStateView(connection: WalletConnection): Promise<Sta
     console.error(new Error("Invoke Result is undefined please check `invokeStateView`"))
 }
 
-async function invokeContract(connection: WalletConnection, contractCtx: ContractContext)
+export async function invokeContract(connection: WalletConnection, contractCtx: ContractContext)
     : Promise<InvokeContractResult | undefined> {
     return withJsonRpcClient(connection, (rpc) =>
         rpc.invokeContract(contractCtx))
@@ -60,7 +60,7 @@ async function invokeContract(connection: WalletConnection, contractCtx: Contrac
         });
 }
 
-export function getInvkResultsAsJson(invkResult: InvokeContractSuccessResult, methodName: string) {
+function getInvkResultsAsJson(invkResult: InvokeContractSuccessResult, methodName: string) {
     if (invkResult.returnValue) {
         const returnValues = deserializeReceiveReturnValue(
             toBuffer(invkResult.returnValue, 'hex'),

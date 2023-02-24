@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Stop"
 $NAME_CONTRACT="cis2_tokens"
-$NAME_CONTRACT_MODULE="cis2_tokens_module"
+$NAME_CONTRACT_MODULE='6ff6fe2e33743b99a5e864d477841e9acfb45e12eb0bd8597980bac7cbd936c4'
+# '6ff6fe2e33743b99a5e864d477841e9acfb45e12eb0bd8597980bac7cbd936c4'
 $NAME_CONTRACT_TOKEN_A="cis2_token_a"
 $GET_TOKEN_ENTRY="get_token_a"
 echo "-----------------------------------"
@@ -26,7 +27,9 @@ concordium-client module deploy .\cis2-tokens\output\cis2_tokens_module.wasm.v1 
 }
 
 if ( 1 -eq $env:INIT ) {
-    concordium-client --grpc-ip node.testnet.concordium.com --grpc-port 10000 contract init $NAME_CONTRACT --contract $NAME_CONTRACT_TOKEN_A --sender "$env:LOCAL_WALLET" --energy 10000 --schema .\cis2-tokens\output\schema.bin --parameter-json .\cis2-tokens\output\init_params.json
+    echo "init"
+    concordium-client --grpc-ip node.testnet.concordium.com --grpc-port 10000 contract init $NAME_CONTRACT_MODULE --contract $NAME_CONTRACT_TOKEN_A --sender "$env:LOCAL_WALLET" --energy 10000 --parameter-json .\cis2-tokens\output\init_params.json --schema .\cis2-tokens\output\schema.bin 
+    echo "done init"
 }
 
 $TOK_INDEX = Read-Host "Please enter token index"

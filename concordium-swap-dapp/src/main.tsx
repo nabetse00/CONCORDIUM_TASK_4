@@ -20,9 +20,9 @@ const Account = loadable(() => import('./pages/AccountInfoPage'),
   {
     resolveComponent: (components) => components.AccountInfoPage
   });
-const ContractInfo = loadable(() => import('./pages/ContractInfoPage'),
+const TokenInfo = loadable(() => import('./pages/TokenAPage'),
   {
-    resolveComponent: (components) => components.ContractInfoPage
+    resolveComponent: (components) => components.TokenAPage
   });
 const ContractData = loadable(() => import('./pages/ContractDataPage'),
   {
@@ -55,8 +55,8 @@ const router = createBrowserRouter(
           element={<Account />}
         />
         <Route
-          path="contract-info/"
-          element={<ContractInfo />}
+          path="token-info/"
+          element={<TokenInfo />}
         />
         <Route
           path="contract/"

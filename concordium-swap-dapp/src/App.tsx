@@ -115,7 +115,7 @@ export function App(props: WalletConnectionProps) {
       case base + "account-info":
         return ['1'];
 
-      case base + "contract-info":
+      case base + "token-info":
         return ['2'];
 
       case base + "contract":
@@ -157,8 +157,8 @@ export function App(props: WalletConnectionProps) {
               {
                 key: '2',
                 icon: <ContactsOutlined />,
-                label: (<Link to={base + "contract-info"}>
-                  Contract Info
+                label: (<Link to={base + "token-info"}>
+                  TokenA displenser 
                 </Link>),
               },
               {

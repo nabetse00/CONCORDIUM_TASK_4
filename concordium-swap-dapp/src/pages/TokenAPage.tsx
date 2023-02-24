@@ -12,6 +12,8 @@ import { TxnStatusComponent } from "../components/txnStatusComp";
 import { CONTRACT_DATA } from "../config/contract";
 import { StateView } from "../contracts/contractTypes";
 import { getContractInfo, invokeStateView, updateBecomeTheRichestMethod } from "../contracts/invokeContractFn";
+import { invokeBalOf } from "../contracts/tokenAFn";
+import { balView } from "../contracts/tokenATypes";
 
 
 interface Props {
@@ -23,7 +25,7 @@ interface Props {
 const { Text, Link } = Typography;
 const { Option } = Select;
 
-export function BecomeTheRichestPage(): JSX.Element {
+export function TokenAPage(): JSX.Element {
     const { connection, account, network }: Props = useOutletContext();;
 
     const [invkResult, setInvkResult] = useState<BigInt>()
@@ -38,26 +40,38 @@ export function BecomeTheRichestPage(): JSX.Element {
     const [submittedTxHash, setSubmittedTxHash] = useState<string>();
     const navigate = useNavigate();
 
+    // token A 
+    const [tokenABal, setTokenABal] = useState<balView>();
 
 
-    const contractAddress: ContractAddress = {
+
+    const tokenAContractAddress: ContractAddress = {
         index: CONTRACT_DATA.index,
         subindex: CONTRACT_DATA.subIndex
     }
 
     const contractCtx: ContractContext = {
-        contract: contractAddress,
+        contract: tokenAContractAddress,
         method: "become_the_richest.view",
     }
 
     useEffect(() => {
 
-        if(!connection || !account ){
+        if (!connection || !account) {
             console.log("redirect")
-           navigate('/CONCORDIUM_TASK_4/')
+            navigate('/CONCORDIUM_TASK_4/')
         }
 
         if (connection && account && !isAwaitingApproval) {
+
+            invokeBalOf(connection, account).then(
+                (res) => {
+                    setTokenABal(res);
+                }
+            ).catch((err) => {
+                setContract(undefined);
+                setContractError(err);
+            })
 
             getContractInfo(connection).then(
                 (res) => {
@@ -162,6 +176,7 @@ export function BecomeTheRichestPage(): JSX.Element {
                         }
                         type="info"
                         showIcon />
+                        <p>account token A bal: {tokenABal} TOKA </p>
                     {connection && submittedTxHash &&
                         <TxnStatusComponent hash={submittedTxHash} connection={connection} callback={callbackTxnStateComp} />
                     }

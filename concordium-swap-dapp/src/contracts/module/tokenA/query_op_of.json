@@ -1,0 +1,34 @@
+[
+    {
+        "owner": {
+            "Account": [
+                "45gPV394xxxQgeZkB4krVWoRtR1k9b4GdKnASgg5vzpuUTe7WJ"
+            ]
+        },
+        "address": {
+            "Contract": [
+                {
+                    "index": 3373,
+                    "subindex": 0
+                }
+            ]
+        }
+    },
+    {
+        "owner": {
+            "Account": [
+                "4Aw1taZUgVx4C8EEhsGWHcAbQ8rj5EiR3QQAFjhkCni3CeNSeu"
+            ]
+        },
+        "address": {
+            "Contract": [
+                {
+                    "index": 3378,
+                    "subindex": 0
+                }
+            ]
+        }
+    }
+]
+
+

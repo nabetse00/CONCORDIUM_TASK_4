@@ -5,10 +5,10 @@ import { Suspense, useEffect, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import { StateViewCompoment } from "../components/genericView";
 import { NoAccount } from "../components/NoAccount";
-import { StateView } from "../contract/contractTypes";
+import { StateView } from "../contracts/contractTypes";
 
 
-import { getContractInfo, invokeStateView } from "../contract/invokeContractFn";
+import { getContractInfo, invokeStateView } from "../contracts/invokeContractFn";
 
 interface Props {
     connection?: WalletConnection,

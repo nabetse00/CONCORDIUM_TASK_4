@@ -8,7 +8,7 @@ import { WalletConnection } from "@concordium/react-components";
 import { TransactionStatus, TransactionStatusEnum } from '@concordium/web-sdk';
 import { Collapse, Timeline, TimelineItemProps} from "antd";
 import { useEffect, useState } from "react";
-import { getTransactionStatus } from "../contract/invokeContractFn";
+import { getTransactionStatus } from "../contracts/invokeContractFn";
 
 
 const { Panel } = Collapse;
