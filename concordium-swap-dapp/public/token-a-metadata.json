@@ -1,0 +1,15 @@
+{
+    "name": "Token A cis2",
+    "symbol": "TOKA",
+    "decimals": 6,
+    "description": "TOKEN A cis2 token. Use get_tokens entrypoint to get some tokens",
+    "thumbnail": {
+        "url": "https://nabetse00.github.io/CONCORDIUM_TASK_4/tokenA.svg"
+    },
+    "display": {
+        "url": "https://nabetse00.github.io/CONCORDIUM_TASK_4/tokenA.svg"
+    },
+    "artifact": {
+        "url": "https://nabetse00.github.io/CONCORDIUM_TASK_4/tokenA.svg"
+    }
+}

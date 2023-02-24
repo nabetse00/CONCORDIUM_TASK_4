@@ -1040,6 +1040,9 @@ mod tests {
         // The hash of the document stored at the above URL.
         let initial_metadata_hash: Sha256 =
             crypto_primitives.hash_sha2_256("document".as_bytes()).0;
+        let temp = crypto_primitives.hash_sha2_256("document".as_bytes());
+        println!(" hash comp: {:#?}",temp );
+        // println!(" hash 256: {:#?}",initial_metadata_hash );
 
         let metadata_url = concordium_cis2::MetadataUrl {
             url:  INITIAL_TOKEN_METADATA_URL.to_string(),
