@@ -1125,9 +1125,6 @@ mod tests {
             }))),
             "Missing event for the new admin"
         );
-
-        println!("\n\n\n\n ==========================> {TOKEN_ID_A}");
-        println!("\n\n\n\n ==========================> {:#?}", initial_metadata_hash);
     }
 
     /// Test only admin can setMetadataUrl

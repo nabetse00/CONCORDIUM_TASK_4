@@ -1,5 +1,5 @@
-//! Upgradable Swap tokenA to ccd  smart contract (Concordium's
-//! implementation following the CIS-2 standard)
+//! Upgradable Swap tokenA to ccd  smart contract 
+//! (Liquidity token following the CIS-2 standard)
 //!
 //! # Description
 //! This contract Swaps token A to ccd and ccd to token A
@@ -16,6 +16,11 @@
 //!
 //! The admin address can pause/unpause the protocol, set implementors, transfer
 //! the admin address to a new address, and update the metadata URL.
+//! 
+//! Liquidity token as a onReceiveCis2 function. Nevertheless in this case the
+//! contract does nothing as it helds its liquidity and burns it 
+//! with add and remove liquidity functions.
+//! This function is here only to enable contract token transfers.
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use concordium_cis2::{Cis2Event, *};
@@ -51,6 +56,7 @@ const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
 /// Since this contract will only ever contain this one token type, we use the
 /// smallest possible token ID.
 type ContractTokenId = TokenIdUnit;
+/// more bytes for token A compat
 type ContractTokenAId = TokenIdU64;
 
 /// The id of the liquidity token in this contract.
@@ -94,11 +100,12 @@ struct State<S: HasStateApi> {
     /// standards.
     implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
     /*
+    Meta data example:
     {
       "name": "Liquidity Token Pair tokA-CCD",
       "symbol": "CCDS-TOKA-CCD",
       "decimals": 6,
-      "description": "A CIS2 token for liquidity providers of tokA-TokB",
+      "description": "A CIS2 token for liquidity providers of tokA-ccd",
       "thumbnail": { "url": "https://location.of/the/thumbnail.png" },
       "display": { "url": "https://location.of/the/display.png" },
       "artifact": { "url": "https://location.of/the/artifact.png" },
@@ -116,9 +123,9 @@ struct State<S: HasStateApi> {
     token_a: ContractTokenAId,
     contract_token_a: ContractAddress,
     k_last: u128,
-    reserve_a: u64,   // uses single storage slot, accessible via getReserves
-    reserve_ccd: u64, // uses single storage slot, accessible via getReserves
-    blocktimestamp_last: Timestamp, // uses single storage slot, accessible via getReserves
+    reserve_a: u64,   // uses single storage slot, accessible via state
+    reserve_ccd: u64, // uses single storage slot, accessible via state
+    blocktimestamp_last: Timestamp, // uses single storage slot, accessible via sate
     fee_liquidity_provider: u64, // fee for liquidity providers 0.2 %
     fee_protocol: u64, // fee for protocol 0.1 %
 }
@@ -867,8 +874,7 @@ fn contract_swap_token_a_to_ccd<S: HasStateApi>(
         );
         match _res {
             Ok(v) => response.push(v.1.unwrap_abort()),
-            Err(e) => {
-                println!("[ERROR] ======================================> {e:#?}");
+            Err(_e) => {
                 bail!(ContractError::Custom(CcdSwapContractError::FailedTokenASwap).into());
             }
         }
@@ -998,8 +1004,7 @@ fn contract_add_liquidity<S: HasStateApi>(
         );
         match _res {
             Ok(v) => response.push(v.1.unwrap_abort()),
-            Err(e) => {
-                println!("[ERROR] ======================================> {e:#?}");
+            Err(_e) => {
                 bail!(ContractError::Custom(CcdSwapContractError::FailedTokenASwap));
             }
         }
@@ -2337,7 +2342,7 @@ mod tests {
                             Ok(n) => n,
                             Err(e) => {
                                 println!(
-                                    "\n\n Morck [EEROR] ==================> swap ccd error {:#?}",
+                                    "Morck [ERROR] ==================> swap ccd error {:#?}",
                                     e
                                 );
                                 return Err(CallContractError::Trap);
@@ -2426,7 +2431,7 @@ mod tests {
                     };
                     if amount.micro_ccd > 0 {
                         println!(
-                            "\n [Mock-operatorOf] ===================> {}",
+                            "[Mock-operatorOf] ===================> {}",
                             amount.micro_ccd
                         );
                         return Err(CallContractError::Trap);
@@ -2547,7 +2552,7 @@ mod tests {
                     };
                     if amount.micro_ccd > 0 {
                         println!(
-                            "\n [Mock-operatorOf] ===================> {}",
+                            "[Mock-operatorOf] ===================> {}",
                             amount.micro_ccd
                         );
                         return Err(CallContractError::Trap);
@@ -2665,7 +2670,7 @@ mod tests {
         claim_eq!(
             val,
             val_exp,
-            "\n ============== >  amount liq wrong {val} when {val_exp} expected\n"
+            "============== >  amount liq wrong {val} when {val_exp} expected"
         );
 
         // now try to remove liq
@@ -2691,14 +2696,14 @@ mod tests {
         claim_eq!(
             s_bal,
             ccd_bal,
-            "\n\n\n\n ============== > balance is wrong for ccd {s_bal} / {ccd_bal}"
+            "============== > balance is wrong for ccd {s_bal} / {ccd_bal}"
         );
         // check  bal token a
         let res_a = host.state().reserve_a;
         claim_eq!(
             host.state().reserve_a,
             RESERVE_A_INIT,
-            "\n ============== >  balance is wrong fro troken A {RESERVE_A_INIT} when {res_a}\n"
+            "============== >  balance is wrong fro troken A {RESERVE_A_INIT} when {res_a}"
         );
         //check AACOUNT_1 bal
         let bqv = vec![BalanceOfQuery {
@@ -2715,7 +2720,7 @@ mod tests {
         claim_eq!(
             val,
             0u64,
-            "\n ============== >  amount liq wrong {val} when 0 expected\n"
+            "============== >  amount liq wrong {val} when 0 expected"
         );
     }
     /// Test admin can update to a new admin address.
