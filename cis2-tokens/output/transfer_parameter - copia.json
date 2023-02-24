@@ -1,0 +1,21 @@
+[
+    {
+        "token_id": "0100000000000000",
+        "amount": "100",
+        "from": {
+            "Account": [
+                "4Aw1taZUgVx4C8EEhsGWHcAbQ8rj5EiR3QQAFjhkCni3CeNSeu"
+            ]
+        },
+        "to": {
+            "Contract": [
+                {
+                    "index": 3362,
+                    "subindex": 0
+                },
+                "onReceivingCIS2"
+            ]
+        },
+        "data": ""
+    }
+]

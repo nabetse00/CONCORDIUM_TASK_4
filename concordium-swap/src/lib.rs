@@ -141,15 +141,9 @@ struct UnwrapParams {
 
 #[derive(Serialize, SchemaType)]
 struct RemoveLiqParams {
-    /// The amount of tokens to unwrap.
     amount: ContractTokenAmount,
-    /// The owner of the tokens.
     owner: Address,
-    /// The address to receive these unwrapped CCD.
     receiver: Receiver,
-    /// If the `Receiver` is a contract the unwrapped CCD together with these
-    /// additional data bytes are sent to the function entrypoint specified in
-    /// the `Receiver`.
     data: AdditionalData,
 }
 
@@ -186,7 +180,6 @@ struct AddLiquidityParams {
 #[derive(Serialize, SchemaType)]
 struct CcdSwapParams {
     to: Receiver,
-
     data: AdditionalData,
 }
 
@@ -667,7 +660,7 @@ impl<S: HasStateApi> State<S> {
 #[init(
     contract = "ccd_swap",
     enable_logger,
-    parameter = "SetMetadataUrlParams",
+    parameter = "SetInitParams",
     event = "CcdSwapEvent"
 )]
 fn contract_init<S: HasStateApi>(
@@ -1007,7 +1000,7 @@ fn contract_add_liquidity<S: HasStateApi>(
             Ok(v) => response.push(v.1.unwrap_abort()),
             Err(e) => {
                 println!("[ERROR] ======================================> {e:#?}");
-                bail!(ContractError::Custom(CcdSwapContractError::FailedTokenASwap).into());
+                bail!(ContractError::Custom(CcdSwapContractError::FailedTokenASwap));
             }
         }
     } else {
@@ -1015,7 +1008,6 @@ fn contract_add_liquidity<S: HasStateApi>(
             ContractError::Custom(CcdSwapContractError::FailedTokenASwapContractCannotSwap).into()
         );
     }
-
     let result_is_operator: Result<OperatorOfQueryResponse, ParseError> =
         response.pop().unwrap_abort().get();
     // let mut is_contract_operator = false;
@@ -1047,6 +1039,7 @@ fn contract_add_liquidity<S: HasStateApi>(
     )?;
 
     // end transfert
+
 
     let (state, state_builder) = host.state_and_builder();
 
@@ -1088,7 +1081,6 @@ fn contract_add_liquidity<S: HasStateApi>(
         amount_ccd: amount,
         receiver: receive_address,
     }))?;
-
     Ok(())
 }
 
@@ -1605,15 +1597,21 @@ fn contract_upgrade<S: HasStateApi>(
 /// - It fails to parse the parameter.
 /// - Contract name part of the parameter is invalid.
 /// - Calling back `transfer` to sender contract rejects.
+
+pub type OnRcvCis2ContractParams = OnReceivingCis2Params<ContractTokenAId, ContractTokenAAmount>;
+
+
 #[receive(
     contract = "ccd_swap",
     name = "onReceivingCIS2",
+    parameter = "OnRcvCis2ContractParams",
     error = "ContractError"
 )]
 fn contract_on_cis2_received<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+    _ctx: &impl HasReceiveContext,
+    _host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
+    /* does nothing !!! 
     // Ensure the sender is a contract.
     let sender = if let Address::Contract(contract) = ctx.sender() {
         contract
@@ -1622,10 +1620,12 @@ fn contract_on_cis2_received<S: HasStateApi>(
     };
 
     // Parse the parameter.
-    let params: OnReceivingCis2Params<ContractTokenId, ContractTokenAmount> =
+    let params: OnRcvCis2ContractParams =
         ctx.parameter_cursor().get()?;
 
+    // Does nothing here !!!
     // Build the transfer from this contract to the contract owner.
+    
     let transfer = Transfer {
         token_id: params.token_id,
         amount: params.amount,
@@ -1635,7 +1635,7 @@ fn contract_on_cis2_received<S: HasStateApi>(
     };
 
     let parameter = TransferParams::from(vec![transfer]);
-
+    
     // Send back a transfer
     host.invoke_contract_read_only(
         &sender,
@@ -1643,6 +1643,7 @@ fn contract_on_cis2_received<S: HasStateApi>(
         EntrypointName::new_unchecked("transfer"),
         Amount::zero(),
     )?;
+    */
     Ok(())
 }
 
@@ -1734,7 +1735,7 @@ fn contract_remove_liquidity<S: HasStateApi>(
             let v_tp = vec![TransferParam {
                 token_id: token_a_id,
                 amount: ContractTokenAAmount::from(tok_a_amount),
-                from: Address::from(ctx.owner()),
+                from: Address::from(ctx.self_address(),),
                 to: params.receiver,
                 data: AdditionalData::empty(),
             }];

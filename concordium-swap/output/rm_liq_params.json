@@ -1,0 +1,14 @@
+{
+    "amount": "100000",
+    "owner": {
+        "Account": [
+            "4Aw1taZUgVx4C8EEhsGWHcAbQ8rj5EiR3QQAFjhkCni3CeNSeu"
+        ]
+    },
+    "receiver": {
+        "Account": [
+            "4Aw1taZUgVx4C8EEhsGWHcAbQ8rj5EiR3QQAFjhkCni3CeNSeu"
+        ]
+    },
+    "data": ""
+}
