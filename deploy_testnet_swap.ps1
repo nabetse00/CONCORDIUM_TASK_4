@@ -1,13 +1,17 @@
 $ErrorActionPreference = "Stop"
+# contract name in /src/lib.rs
 $NAME_CONTRACT="ccd_swap"
-$NAME_CONTRACT_MODULE="ccd_swap11"
+# change on module changes
+$NAME_CONTRACT_MODULE="ccd_swap12"
 $NAME_CONTRACT_TOKEN_A="cis2_token_a"
 $GET_TOKEN_ENTRY="get_token_a"
 $UPDATE_TOKEN_OP="updateOperator"
 $OP_OF_TOKEN="operatorOf"
+# must be a cis2 token
+# check ./cis2-tokens for an example
 $TOKEN_A_CONTRACT_INDEX="3321"
 $TOKEN_A_CONTRACT_SUB_INDEX="0"
-$CONTRACT_INDEX=3373
+$CONTRACT_INDEX=3378
 echo "-----------------------------------"
 echo "Load .env files"
 echo "-----------------------------------"

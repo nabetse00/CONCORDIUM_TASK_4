@@ -10,7 +10,7 @@
         "to": {
             "Contract": [
                 {
-                    "index": 3373,
+                    "index": 3378,
                     "subindex": 0
                 },
                 "onReceivingCIS2"
