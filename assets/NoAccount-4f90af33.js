@@ -1,0 +1,1 @@
+import{j as t}from"./index-5c482bb5.js";import{c as e}from"./ui-bc4a4294.js";function c(o){return t.jsx(e,{type:"error",message:"No account connected",description:"Please connect to your wallet on "+o.network})}export{c as N};
