@@ -5,8 +5,7 @@ import {
     WalletConnectConnector,
 } from '@concordium/react-components';
 
-const WALLET_CONNECT_PROJECT_ID = import.meta.env.VITE_WALLET_CONNECT_PROJECT_ID
-console.log("===========================> " + WALLET_CONNECT_PROJECT_ID)
+const WALLET_CONNECT_PROJECT_ID = '19225c963ab9231c4aeef948e34d423a'
 const WALLET_CONNECT_OPTS: SignClientTypes.Options = {
     projectId: WALLET_CONNECT_PROJECT_ID,
     metadata: {
