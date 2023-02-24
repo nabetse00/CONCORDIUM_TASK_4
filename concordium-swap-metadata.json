@@ -1,0 +1,21 @@
+{
+    "name": "Liquidity Token Pair tokA-CCD",
+    "symbol": "CCDS-TOKA-CCD",
+    "decimals": 6,
+    "description": "A CIS2 token for liquidity providers of tokA-TokB",
+    "thumbnail": {
+        "url": "https://location.of/the/thumbnail.png"
+    },
+    "display": {
+        "url": "https://location.of/the/display.png"
+    },
+    "artifact": {
+        "url": "https://location.of/the/artifact.png"
+    },
+    "localization": {
+        "es-ES": {
+            "url": "https://location.of/the/spanish/metadata.json",
+            "hash": "624a1a7e51f7a87effbf8261426cb7d436cf597be327ebbf113e62cb7814a34b"
+        }
+    }
+}
