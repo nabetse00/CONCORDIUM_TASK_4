@@ -1,0 +1,27 @@
+{
+  "contractName": "become_the_richest",
+  "entrypoints": {
+    "become_the_richest": {
+      "error": "FQQAAAAKAAAAUGFyc2VFcnJvcgILAAAAT25seUFjY291bnQCGQAAAEFtb3VudEJlbG93Q3VycmVudFJpY2hlc3QCFwAAAEFtb3VudEJlbG93TWluaW11bVJhaXNlAg",
+      "parameter": "FgI"
+    },
+    "view": {
+      "returnValue": "FAADAAAADwAAAHJpY2hlc3RfYWNjb3VudBUCAAAABAAAAE5vbmUCBAAAAFNvbWUBAQAAAAsPAAAAcmljaGVzdF9tZXNzYWdlFgINAAAAbWluaW11bV9yYWlzZQU"
+    },
+    "viewMinimumRaise": {
+      "returnValue": "BQ"
+    },
+    "viewRichestAddress": {
+      "returnValue": "FQIAAAAHAAAAQWNjb3VudAEBAAAACwgAAABDb250cmFjdAEBAAAADA"
+    },
+    "viewRichestAmount": {
+      "returnValue": "Cg"
+    },
+    "viewRichestMessage": {
+      "returnValue": "FgI"
+    }
+  },
+  "init": {
+    "parameter": "FAACAAAADQAAAG1pbmltdW1fcmFpc2UFDwAAAHJpY2hlc3RfbWVzc2FnZRYC"
+  }
+}
