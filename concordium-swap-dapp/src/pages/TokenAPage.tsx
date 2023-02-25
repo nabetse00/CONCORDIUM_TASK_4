@@ -57,6 +57,7 @@ export function TokenAPage(): JSX.Element {
 
             invoke_bal_of(connection, account).then(
                 (res) => {
+                    console.log("bal check")
                     setTokenABal(res);
                     setContractError('');
                 }
@@ -67,6 +68,7 @@ export function TokenAPage(): JSX.Element {
 
             invoke_is_operator(connection, account).then(
                 (res) => {
+                    console.log("is op check")
                     if (res) {
                         //console.log(res)
                         setIsContractOperator(res);
