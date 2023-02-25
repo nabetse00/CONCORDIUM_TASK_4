@@ -6,7 +6,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import Balance from "../components/Balance";
 import { NoAccount } from "../components/NoAccount";
-import {base} from '../main'
+import { base } from '../main';
 
 interface Props {
     connection?: WalletConnection,

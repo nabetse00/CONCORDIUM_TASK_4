@@ -1,8 +1,7 @@
 import { Network, WalletConnection } from "@concordium/wallet-connectors";
-import { Alert, Button, Space, Spin, Tour, TourProps, Typography, MenuRef } from "antd";
-import { RefObject, Suspense, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import { useOutletContext } from "react-router-dom";
+import { Alert, Button, MenuRef, Space, Spin, Tour, TourProps, Typography } from "antd";
+import { RefObject, Suspense, useState } from "react";
+import { Link, useOutletContext } from "react-router-dom";
 import { NoAccount } from "../components/NoAccount";
 
 interface Props {

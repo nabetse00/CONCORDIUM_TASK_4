@@ -1,27 +1,15 @@
+import { detectConcordiumProvider } from '@concordium/browser-wallet-api-helpers';
 import { Network, WalletConnection, withJsonRpcClient } from "@concordium/react-components";
-import {
-    ContractAddress,
-    ContractContext, InstanceInfo
-} from '@concordium/web-sdk';
-import { Alert, Button, Card, Col, Collapse, Form, Input, InputNumber, List, Row, Select, Slider, Space, Spin, Typography } from "antd";
+import { AccountInfo, IdStatementBuilder, verifyIdstatement } from '@concordium/web-sdk';
+import { Alert, Button, Col, Collapse, InputNumber, Row, Select, Slider, Space, Spin, Typography } from "antd";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import { ModalConfirm } from "../components/ModalConfirm";
 import { NoAccount } from "../components/NoAccount";
 import { TxnStatusComponent } from "../components/txnStatusComp";
-import { CONTRACT_DATA } from "../config/contract";
-import { StateView } from "../contracts/contractTypes";
-import { getContractInfo, invokeStateView, updateBecomeTheRichestMethod } from "../contracts/invokeContractFn";
-import { invoke_bal_of, invoke_get_tokens, invoke_is_operator, update_operator } from "../contracts/tokenAFn";
-import { balView } from "../contracts/tokenATypes";
-import { blue, gray, green, grey, orange, volcano } from '@ant-design/colors';
-import { AccountInfo, IdStatementBuilder, verifyIdstatement } from '@concordium/web-sdk';
-import {
-    DollarOutlined
-} from '@ant-design/icons';
-import { base } from "../main";
 import { invoke_add_liquidity, invoke_liq_of, invoke_remove_liquidity, invoke_swap_ccd_for_token_a, invoke_swap_token_a_for_ccd } from "../contracts/swapFn";
-import { detectConcordiumProvider } from '@concordium/browser-wallet-api-helpers';
+import { invoke_bal_of, invoke_is_operator, update_operator } from "../contracts/tokenAFn";
+import { balView } from "../contracts/tokenATypes";
+import { base } from "../main";
 
 const { Panel } = Collapse;
 

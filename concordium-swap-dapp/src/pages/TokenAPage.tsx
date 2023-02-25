@@ -1,23 +1,12 @@
+import { orange } from '@ant-design/colors';
 import { Network, WalletConnection } from "@concordium/react-components";
-import {
-    ContractAddress,
-    ContractContext, InstanceInfo
-} from '@concordium/web-sdk';
-import { Alert, Button, Card, Col, Form, Input, InputNumber, List, Row, Select, Slider, Space, Spin, Typography } from "antd";
+import { Button, Card, Col, InputNumber, Row, Select, Slider, Space, Spin, Typography } from "antd";
 import { Suspense, useEffect, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import { ModalConfirm } from "../components/ModalConfirm";
 import { NoAccount } from "../components/NoAccount";
 import { TxnStatusComponent } from "../components/txnStatusComp";
-import { CONTRACT_DATA } from "../config/contract";
-import { StateView } from "../contracts/contractTypes";
-import { getContractInfo, invokeStateView, updateBecomeTheRichestMethod } from "../contracts/invokeContractFn";
 import { invoke_bal_of, invoke_get_tokens, invoke_is_operator, update_operator } from "../contracts/tokenAFn";
 import { balView } from "../contracts/tokenATypes";
-import { gray, green, grey, orange, volcano } from '@ant-design/colors';
-import {
-    DollarOutlined
-} from '@ant-design/icons';
 import { base } from "../main";
 
 
