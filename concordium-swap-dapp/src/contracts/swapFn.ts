@@ -6,7 +6,7 @@ import {
     InvokeContractSuccessResult, serializeUpdateContractParameters,
     toBuffer, TransactionStatus
 } from '@concordium/web-sdk';
-import { SWAP_CONTRACT_DATA, MAX_CONTRACT_EXECUTION_ENERGY, TOKEN_A_DATA } from "../config/contract";
+import { SWAP_CONTRACT_DATA, MAX_CONTRACT_EXECUTION_ENERGY, TOKEN_A_DATA, MAX_SWAP_EXECUTION_ENERGY } from "../config/contract";
 import schB64 from './module/concordium-swap/schema.b64?raw';
 import { invokeContract } from './invokeContractFn'
 import { balView } from './tokenATypes';
@@ -30,12 +30,12 @@ function getInvkSwapResultsAsJson(invkResult: InvokeContractSuccessResult, metho
 }
 
 export async function invokeStateSwapView(connection: WalletConnection): Promise<any | undefined> {
-    
+
     const contractCtxView: ContractContext = {
         contract: SwapContractAddress,
         method: `${SWAP_CONTRACT_DATA.name}.view`,
     }
-    
+
     const invkRes = await invokeContract(connection, contractCtxView)
     if (invkRes?.tag === "success") {
         let successRes: InvokeContractSuccessResult = invkRes
@@ -85,57 +85,119 @@ export async function invoke_liq_of(connection: WalletConnection, account: strin
     console.error(new Error("Invoke Result is undefined please check `bal of` invoke"))
 }
 
-
-// Add liquidity fn 
-
 /**
- * update token contract to get tokens
+ * update token contract to add liquidity
  * @param connection 
  * @param account 
+ * @param amount_mccd
+ * @param amount_mtoken_a
  * @returns 
  */
-export async function invoke_add_liquidity(connection: WalletConnection, account: string, amount_ccd:number, amount_token_a: number): Promise<string> {
+export async function invoke_add_liquidity(connection: WalletConnection, account: string, amount_mccd: number, amount_mtoken_a: number): Promise<string> {
     const params = {
         to: { Account: [account] },
-        amount: amount_token_a.toString(),
+        amount: amount_mtoken_a.toString(),
         data: ""
     }
 
-    const addLiquidityCtx: ContractContext = {
-        contract: SwapContractAddress,
-        method: `${SWAP_CONTRACT_DATA.name}.${SWAP_CONTRACT_DATA.method_add_liquidity}`,
-        parameter: serializeUpdateContractParameters(
-            SWAP_CONTRACT_DATA.name,
-            SWAP_CONTRACT_DATA.method_add_liquidity,
-            params,
-            toBuffer(schB64, 'base64'),
-            1,
-        ),
-    }
-
-    const invkRes = await invokeContract(connection, addLiquidityCtx)
-    if (invkRes?.tag === "success") {
-        //let successRes: InvokeContractSuccessResult = invkRes
-        //const res = getInvkTokenResultsAsJson(successRes, TOKEN_A_DATA.method_get_tokens)
-        //console.log(`get tokens result: ${JSON.stringify(res)}`)
-        //return res;
-        return connection.signAndSendTransaction(
-            account,
-            AccountTransactionType.Update,
-            {
-                address: SwapContractAddress,
-                amount: new CcdAmount(BigInt(amount_ccd*1e6)),
-                receiveName: `${SWAP_CONTRACT_DATA.name}.${SWAP_CONTRACT_DATA.method_add_liquidity}`,
-                maxContractExecutionEnergy: MAX_CONTRACT_EXECUTION_ENERGY,
-            },
-            params,
-            schB64,
-            1
-        );
-    }
-    if (invkRes) console.error(new Error(JSON.stringify(invkRes)))
-    const err = new Error("Invoke Result is undefined please check `get tokens` invoke")
-    console.error(err)
-    throw err;
+    return connection.signAndSendTransaction(
+        account,
+        AccountTransactionType.Update,
+        {
+            address: SwapContractAddress,
+            amount: new CcdAmount(BigInt(amount_mccd)),
+            receiveName: `${SWAP_CONTRACT_DATA.name}.${SWAP_CONTRACT_DATA.method_add_liquidity}`,
+            maxContractExecutionEnergy: MAX_SWAP_EXECUTION_ENERGY,
+        },
+        params,
+        schB64,
+        1
+    );
 }
 
+/**
+ * update token contract to remove liquidity
+ * @param connection 
+ * @param account 
+ * @param amount_mtoken_liq 
+ * @returns 
+ */
+export async function invoke_remove_liquidity(connection: WalletConnection, account: string, amount_mtoken_liq: number): Promise<string> {
+    const params = {
+        amount: amount_mtoken_liq.toString(),
+        receiver: { Account: [account] },
+        owner: { Account: [account] },
+        data: ""
+    }
+
+    return connection.signAndSendTransaction(
+        account,
+        AccountTransactionType.Update,
+        {
+            address: SwapContractAddress,
+            amount: new CcdAmount(BigInt(0)),
+            receiveName: `${SWAP_CONTRACT_DATA.name}.${SWAP_CONTRACT_DATA.method_rm_liquidity}`,
+            maxContractExecutionEnergy: MAX_SWAP_EXECUTION_ENERGY,
+        },
+        params,
+        schB64,
+        1
+    );
+}
+
+/**
+ * update swap ccd for token A
+ * @param connection 
+ * @param account 
+ * @param amount_mccd
+ * @returns 
+ */
+export async function invoke_swap_ccd_for_token_a(connection: WalletConnection, account: string, amount_mccd: number): Promise<string> {
+    const params = {
+        to: { Account: [account] },
+        data: ""
+    }
+
+    return connection.signAndSendTransaction(
+        account,
+        AccountTransactionType.Update,
+        {
+            address: SwapContractAddress,
+            amount: new CcdAmount(BigInt(amount_mccd)),
+            receiveName: `${SWAP_CONTRACT_DATA.name}.${SWAP_CONTRACT_DATA.method_swap_to_token_a}`,
+            maxContractExecutionEnergy: MAX_SWAP_EXECUTION_ENERGY,
+        },
+        params,
+        schB64,
+        1
+    );
+}
+
+/**
+ * update swap token A for ccd  
+ * @param connection 
+ * @param account
+ * @param amount_mtoken_a
+ * @returns 
+ */
+export async function invoke_swap_token_a_for_ccd(connection: WalletConnection, account: string, amount_mtoken_a: number): Promise<string> {
+    const params = {
+        to: { Account: [account] },
+        amount: amount_mtoken_a.toString(),
+        data: ""
+    }
+
+    return connection.signAndSendTransaction(
+        account,
+        AccountTransactionType.Update,
+        {
+            address: SwapContractAddress,
+            amount: new CcdAmount(BigInt(0)),
+            receiveName: `${SWAP_CONTRACT_DATA.name}.${SWAP_CONTRACT_DATA.method_swap_to_ccd}`,
+            maxContractExecutionEnergy: MAX_SWAP_EXECUTION_ENERGY,
+        },
+        params,
+        schB64,
+        1
+    );
+}

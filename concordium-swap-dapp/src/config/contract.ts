@@ -54,6 +54,7 @@ export const CONTRACT_DATA: ContractType = {
 }
 
 export const MAX_CONTRACT_EXECUTION_ENERGY = BigInt(10000);
+export const MAX_SWAP_EXECUTION_ENERGY = BigInt(50000);
 
 export const TOKEN_A_DATA: TokenType = {
     name: "cis2_token_a",
