@@ -118,11 +118,8 @@ export function App(props: WalletConnectionProps) {
       case base + "token-info":
         return ['2'];
 
-      case base + "contract":
+      case base + "concordium-swap":
         return ['3'];
-
-      case base + "become-the-richest":
-        return ['4'];
 
       default:
         return ['0'];
@@ -163,16 +160,9 @@ export function App(props: WalletConnectionProps) {
               },
               {
                 key: '3',
-                icon: <InfoCircleOutlined />,
-                label: (<Link to={base + "contract"} >
-                  Contract Data
-                </Link>),
-              },
-              {
-                key: '4',
                 icon: <DollarCircleOutlined />,
-                label: (<Link to={base + "become-the-richest"}>
-                  Become the richest
+                label: (<Link to={base + "concordium-swap"}>
+                  Concordium Swap
                 </Link>),
               },
 

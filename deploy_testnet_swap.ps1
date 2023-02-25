@@ -2,16 +2,16 @@ $ErrorActionPreference = "Stop"
 # contract name in /src/lib.rs
 $NAME_CONTRACT="ccd_swap"
 # change on module changes
-$NAME_CONTRACT_MODULE="ccd_swap12"
+$NAME_CONTRACT_MODULE="concordium_swap_module"
 $NAME_CONTRACT_TOKEN_A="cis2_token_a"
 $GET_TOKEN_ENTRY="get_token_a"
 $UPDATE_TOKEN_OP="updateOperator"
 $OP_OF_TOKEN="operatorOf"
 # must be a cis2 token
 # check ./cis2-tokens for an example
-$TOKEN_A_CONTRACT_INDEX="3321"
+$TOKEN_A_CONTRACT_INDEX="3389"
 $TOKEN_A_CONTRACT_SUB_INDEX="0"
-$CONTRACT_INDEX=3378
+$CONTRACT_INDEX=3430
 echo "-----------------------------------"
 echo "Load .env files"
 echo "-----------------------------------"
@@ -42,11 +42,13 @@ if ( 1 -eq $ANSWER ) {
 Exit 0
 }
 
-# echo "view state for $TOK_INDEX"
-# concordium-client --grpc-ip node.testnet.concordium.com --grpc-port 10000 contract invoke $CONTRACT_INDEX --entrypoint view
-
-# echo "view state for $TOK_INDEX"
-# concordium-client --grpc-ip node.testnet.concordium.com --grpc-port 10000 contract invoke $CONTRACT_INDEX --entrypoint view
+$ANSWER = Read-Host "view token and swap contract state ?"
+if ( 1 -eq $ANSWER ) {
+echo "view state for $TOKEN_A_CONTRACT_INDEX"
+concordium-client --grpc-ip node.testnet.concordium.com --grpc-port 10000 contract invoke $TOKEN_A_CONTRACT_INDEX --entrypoint view
+echo "view state for $CONTRACT_INDEX"
+concordium-client --grpc-ip node.testnet.concordium.com --grpc-port 10000 contract invoke $CONTRACT_INDEX --entrypoint view
+}
 
 $ANSWER = Read-Host "add contract as operator of for $CONTRACT_INDEX ?"
 if ( 1 -eq $ANSWER ) {

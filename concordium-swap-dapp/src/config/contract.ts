@@ -16,11 +16,38 @@ export interface TokenType extends ContractType {
     method_update_op: string;
 }
 
+export interface SwapContractType extends TokenType {
+    token_a_id: string;
+    method_add_liquidity: string;
+    method_rm_liquidity: string;
+    method_swap_to_token_a: string;
+    method_swap_to_ccd: string;
+}
+
+
+export const SWAP_CONTRACT_DATA: SwapContractType = {
+    name: "ccd_swap",
+    address: "a3e503257095bf2c65d61a8536adab95a2a4e49dcb5153ccfe5ffb23881faae7",
+    index: 3430n,
+    subIndex: 0n,
+    amount: 0n,
+    sender: "4Aw1taZUgVx4C8EEhsGWHcAbQ8rj5EiR3QQAFjhkCni3CeNSeu",
+    token_id: "",
+    method_bal_of: "balanceOf",
+    method_get_tokens: "get_token_a",
+    method_op_of: "operatorOf",
+    method_update_op: "updateOperator",
+    token_a_id: "0100000000000000",
+    method_add_liquidity: "add_liquidity",
+    method_rm_liquidity: "remove_liq",
+    method_swap_to_ccd: "swap_token_a_for_ccd",
+    method_swap_to_token_a: "swap_ccd_for_tokenA"
+}
 
 export const CONTRACT_DATA: ContractType = {
-    name: "become_the_richest",
-    address: "'cbd409fd57d8e0283c28be708f6b72e0b2bffdeb99a620e14d52d0deb0bd42f",
-    index: 3122n,
+    name: "ccd_swap",
+    address: "a3e503257095bf2c65d61a8536adab95a2a4e49dcb5153ccfe5ffb23881faae7",
+    index: 3430n,
     subIndex: 0n,
     amount: 0n,
     sender: "4Aw1taZUgVx4C8EEhsGWHcAbQ8rj5EiR3QQAFjhkCni3CeNSeu"

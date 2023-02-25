@@ -3,7 +3,7 @@ import { Badge, Descriptions, Spin } from "antd";
 import { Suspense, useEffect, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import { ContractAddress, InstanceInfo } from '@concordium/web-sdk';
-import { CONTRACT_DATA } from "../config/contract"
+import { SWAP_CONTRACT_DATA } from "../config/contract"
 import Balance from "../components/Balance";
 import { NoAccount } from "../components/NoAccount";
 import { get_contract_name } from "../utils/contracts";
@@ -24,8 +24,8 @@ export function ContractInfoPage() {
     const navigate = useNavigate()
 
     const contractAddress: ContractAddress = {
-        index: CONTRACT_DATA.index,
-        subindex: CONTRACT_DATA.subIndex
+        index: SWAP_CONTRACT_DATA.index,
+        subindex: SWAP_CONTRACT_DATA.subIndex
     }
 
     useEffect(() => {
@@ -43,6 +43,7 @@ export function ContractInfoPage() {
                 })
                 .catch((err) => {
                     setInfo(undefined);
+                    console.log(err)
                     setInfoError(err);
                 });
         }

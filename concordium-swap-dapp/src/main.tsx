@@ -6,7 +6,7 @@ import './index.css'
 //Router
 import {
   createHashRouter,
-  createBrowserRouter,
+  //createBrowserRouter,
   createRoutesFromElements,
   Route,
   RouterProvider,
@@ -25,15 +25,11 @@ const TokenInfo = loadable(() => import('./pages/TokenAPage'),
   {
     resolveComponent: (components) => components.TokenAPage
   });
-const ContractData = loadable(() => import('./pages/ContractDataPage'),
+const ConcordiumSwap = loadable(() => import('./pages/SwapPage'),
   {
-    resolveComponent: (components) => components.ContractDataPage
+    resolveComponent: (components) => components.SwapPage
   });
-  const BecomeTheRichest = loadable(() => import('./pages/BecomeTheRichestPage'),
-  {
-    resolveComponent: (components) => components.BecomeTheRichestPage
-  });
-  const IndexPage = loadable(() => import('./pages/IndexPage'),
+const IndexPage = loadable(() => import('./pages/IndexPage'),
   {
     resolveComponent: (components) => components.IndexPage
   });
@@ -47,7 +43,7 @@ const router = createHashRouter(
       errorElement={<ErrorPage />}
     >
       <Route errorElement={<ErrorPage />}>
-      <Route
+        <Route
           index
           element={<IndexPage />}
         />
@@ -60,13 +56,8 @@ const router = createHashRouter(
           element={<TokenInfo />}
         />
         <Route
-          path="contract/"
-          element={<ContractData />}
-        />
-
-        <Route
-          path="become-the-richest/"
-          element={<BecomeTheRichest/>}
+          path="concordium-swap/"
+          element={<ConcordiumSwap />}
         />
       </Route>
 

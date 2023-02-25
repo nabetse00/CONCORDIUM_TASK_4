@@ -52,7 +52,7 @@ export function IndexPage() {
                                         <li> <Link to="account-info/">Your Account Info</Link></li>
                                         <li> <Link to="token-info/">Token A info and dispenser</Link></li>
                                         <li> <Link to="contract/">Contract Current Data</Link></li>
-                                        <li> <Link to="become-the-richest/">Update Contract and become the Richest (for now on testnet 😉)</Link> </li>
+                                        <li> <Link to="concordium-swap/">Concorduim swap pair (for now on testnet 😉)</Link> </li>
                                     </ul>
 
                                 </Space>

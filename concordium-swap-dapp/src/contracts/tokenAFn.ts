@@ -100,7 +100,6 @@ export async function invoke_bal_of(connection: WalletConnection, account: strin
  * @returns 
  */
 export async function invoke_get_tokens(connection: WalletConnection, account: string, amount:number): Promise<string> {
-
     const params = {
         to: { Account: [account] },
         amount: amount.toString(),

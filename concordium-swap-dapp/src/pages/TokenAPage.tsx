@@ -15,7 +15,8 @@ import { getContractInfo, invokeStateView, updateBecomeTheRichestMethod } from "
 import { invoke_bal_of, invoke_get_tokens, invoke_is_operator, update_operator } from "../contracts/tokenAFn";
 import { balView } from "../contracts/tokenATypes";
 import { gray, green, grey, orange, volcano } from '@ant-design/colors';
-import {DollarOutlined
+import {
+    DollarOutlined
 } from '@ant-design/icons';
 import { base } from "../main";
 
@@ -58,7 +59,6 @@ export function TokenAPage(): JSX.Element {
 
             invoke_bal_of(connection, account).then(
                 (res) => {
-                    console.log("bal check")
                     setTokenABal(res);
                     setContractError('');
                 }
@@ -69,7 +69,6 @@ export function TokenAPage(): JSX.Element {
 
             invoke_is_operator(connection, account).then(
                 (res) => {
-                    console.log("is op check")
                     if (res) {
                         //console.log(res)
                         setIsContractOperator(res);
@@ -120,9 +119,9 @@ export function TokenAPage(): JSX.Element {
         if (connection && account) {
             setIsAwaitingApproval(true);
             setSubmittedTxHash("")
-            invoke_get_tokens(connection, account, tokensToSendValue * 10e6).then(
+            invoke_get_tokens(connection, account, tokensToSendValue * 1e6).then(
                 (hash) => {
-                    console.log("success then in add contract")
+                    console.log("txn hash: " + hash)
                     setSubmittedTxHash(hash)
                     setContractError('');
                 }
@@ -140,8 +139,8 @@ export function TokenAPage(): JSX.Element {
             {(connection && account) ?
                 <Space direction="vertical" size="middle">
                     <Card title="Your Token A data" style={{ backgroundColor: orange[0] }}>
-                        <p>Token A balance: {tokenABal? parseInt(tokenABal[0])/10e6: 0} TOK_A </p>
-                        <p>Is concordium-swap contract an operator of your account? {isContractOperator[0] ? "✅ you can use this dispenser 😄" : "❌ use bellow button to change that 😓" } </p>
+                        <p>Token A balance: {tokenABal ? parseInt(tokenABal[0]) / 1e6 : 0} TOK_A </p>
+                        <p>Is concordium-swap contract an operator of your account? {isContractOperator[0] ? "✅ you can use this dispenser 😄" : "❌ use bellow button to change that 😓"} </p>
                         {connection && <Button type="primary" loading={isAwaitingApproval} disabled={isContractOperator[0]} onClick={() => add_contract_as_operator()}>
                             Click to set concordium swap as operator for token A
                         </Button>}
