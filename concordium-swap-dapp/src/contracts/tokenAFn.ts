@@ -58,7 +58,7 @@ async function getTokenAInstanceInfo(connection: WalletConnection,
  * @param account account address 
  * @returns Promise as a balView tipe or undefined
  */
-export async function invokeBalOf(connection: WalletConnection, account: string): Promise<balView | undefined> {
+export async function invoke_bal_of(connection: WalletConnection, account: string): Promise<balView | undefined> {
 
     const params = [
         {
@@ -85,7 +85,6 @@ export async function invokeBalOf(connection: WalletConnection, account: string)
     if (invkRes?.tag === "success") {
         let successRes: InvokeContractSuccessResult = invkRes
         const res: balView = getInvkTokenResultsAsJson(successRes, TOKEN_A_DATA.method_bal_of)
-        console.log(`balance of result: ${JSON.stringify(res)}`)
         return res;
     }
     if (invkRes) console.error(new Error(JSON.stringify(invkRes)))
@@ -95,16 +94,16 @@ export async function invokeBalOf(connection: WalletConnection, account: string)
 
 
 /**
- * invoke token contract to get tokens
+ * update token contract to get tokens
  * @param connection 
  * @param account 
  * @returns 
  */
-export async function invoke_get_tokens(connection: WalletConnection, account: string): Promise<balView | undefined> {
+export async function invoke_get_tokens(connection: WalletConnection, account: string, amount:number): Promise<string> {
 
     const params = {
         to: { Account: [account] },
-        amount: "10000",
+        amount: amount.toString(),
         data: ""
     }
 
@@ -122,13 +121,29 @@ export async function invoke_get_tokens(connection: WalletConnection, account: s
 
     const invkRes = await invokeContract(connection, tokenACtxGetTokens)
     if (invkRes?.tag === "success") {
-        let successRes: InvokeContractSuccessResult = invkRes
-        const res = getInvkTokenResultsAsJson(successRes, TOKEN_A_DATA.method_get_tokens)
-        console.log(`get tokens result: ${JSON.stringify(res)}`)
-        return res;
+        //let successRes: InvokeContractSuccessResult = invkRes
+        //const res = getInvkTokenResultsAsJson(successRes, TOKEN_A_DATA.method_get_tokens)
+        //console.log(`get tokens result: ${JSON.stringify(res)}`)
+        //return res;
+        return connection.signAndSendTransaction(
+            account,
+            AccountTransactionType.Update,
+            {
+                address: tokenAContractAddress,
+                amount: new CcdAmount(BigInt(0)),
+                receiveName: `${TOKEN_A_DATA.name}.${TOKEN_A_DATA.method_get_tokens}`,
+                maxContractExecutionEnergy: MAX_CONTRACT_EXECUTION_ENERGY,
+            },
+            params,
+            schB64,
+            1
+        );
     }
     if (invkRes) console.error(new Error(JSON.stringify(invkRes)))
-    console.error(new Error("Invoke Result is undefined please check `get tokens` invoke"))
+    const err = new Error("Invoke Result is undefined please check `get tokens` invoke")
+    console.error(err)
+    throw err;
+
 }
 
 
@@ -138,7 +153,7 @@ export async function invoke_get_tokens(connection: WalletConnection, account: s
  * @param account 
  * @returns 
  */
-export async function invoke_update_operator(connection: WalletConnection, account: string): Promise<balView | undefined> {
+export async function update_operator(connection: WalletConnection, account: string): Promise<string> {
 
     const params = [
         {
@@ -148,8 +163,8 @@ export async function invoke_update_operator(connection: WalletConnection, accou
             operator: {
                 Contract: [
                     {
-                        index: CONTRACT_DATA.index,
-                        subindex: CONTRACT_DATA.subIndex
+                        index: Number(CONTRACT_DATA.index),
+                        subindex: Number(CONTRACT_DATA.subIndex)
                     }
                 ]
             }
@@ -170,13 +185,29 @@ export async function invoke_update_operator(connection: WalletConnection, accou
 
     const invkRes = await invokeContract(connection, tokenACtxUpdateOp)
     if (invkRes?.tag === "success") {
-        let successRes: InvokeContractSuccessResult = invkRes
-        const res = getInvkTokenResultsAsJson(successRes, TOKEN_A_DATA.method_update_op)
-        console.log(`get update op: ${JSON.stringify(res)}`)
-        return res;
+        //console.log("success!")
+        //let successRes: InvokeContractSuccessResult = invkRes
+        //const res = getInvkTokenResultsAsJson(successRes, TOKEN_A_DATA.method_update_op)
+        console.log("invoke test ok! lets go to a real transaction")
+        return connection.signAndSendTransaction(
+            account,
+            AccountTransactionType.Update,
+            {
+                address: tokenAContractAddress,
+                amount: new CcdAmount(BigInt(0)),
+                receiveName: `${TOKEN_A_DATA.name}.${TOKEN_A_DATA.method_update_op}`,
+                maxContractExecutionEnergy: MAX_CONTRACT_EXECUTION_ENERGY,
+            },
+            // @ts-expect-error
+            params, // this is not an error since param is an array
+            schB64,
+            1
+        );
     }
     if (invkRes) console.error(new Error(JSON.stringify(invkRes)))
-    console.error(new Error("Invoke Result is undefined please check `update op` invoke"))
+    const err = new Error("Invoke Result is undefined please check `update op` invoke")
+    console.error(err)
+    throw err;
 }
 
 /**
@@ -185,7 +216,7 @@ export async function invoke_update_operator(connection: WalletConnection, accou
  * @param account 
  * @returns 
  */
-export async function invoke_is_operator(connection: WalletConnection, account: string): Promise<balView | undefined> {
+export async function invoke_is_operator(connection: WalletConnection, account: string): Promise<boolean[] | undefined> {
 
     const params = [
         {
@@ -197,12 +228,12 @@ export async function invoke_is_operator(connection: WalletConnection, account: 
             address: {
                 Contract: [
                     {
-                        index: CONTRACT_DATA.index,
-                        subindex: CONTRACT_DATA.subIndex
+                        index: Number(CONTRACT_DATA.index),
+                        subindex: Number(CONTRACT_DATA.subIndex)
                     }
                 ]
             }
-        }
+        },
     ]
 
     const tokenACtxOperatorOf: ContractContext = {
@@ -213,15 +244,17 @@ export async function invoke_is_operator(connection: WalletConnection, account: 
             TOKEN_A_DATA.method_op_of,
             params,
             toBuffer(schB64, 'base64'),
-            1,
+            2,
         ),
+        energy: MAX_CONTRACT_EXECUTION_ENERGY,
     }
+
+
 
     const invkRes = await invokeContract(connection, tokenACtxOperatorOf)
     if (invkRes?.tag === "success") {
         let successRes: InvokeContractSuccessResult = invkRes
         const res = getInvkTokenResultsAsJson(successRes, TOKEN_A_DATA.method_op_of)
-        console.log(`operator of: ${JSON.stringify(res)}`)
         return res;
     }
     if (invkRes) console.error(new Error(JSON.stringify(invkRes)))

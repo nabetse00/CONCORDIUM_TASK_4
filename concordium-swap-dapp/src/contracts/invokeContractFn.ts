@@ -109,12 +109,6 @@ export async function updateBecomeTheRichestMethod(connection: WalletConnection,
             if (!res || res.tag === 'failure') {
                 console.error("update =====>\n", res)
                 return undefined
-                //}
-                // ? maybe nothing ?
-                // The return value is an array. The value stored in the array starts at position 4 of the return value.
-                //if (res && res.tag === "success" && res.returnValue) {
-                //    console.log("success ====> \n", res)
-                //    return BigInt(leb.decodeULEB128(toBuffer(res.returnValue.slice(4), 'hex'))[0]);
             } else {
                 console.log("update =====>\n", res)
                 return res;

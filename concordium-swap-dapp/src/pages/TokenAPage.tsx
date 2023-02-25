@@ -3,7 +3,7 @@ import {
     ContractAddress,
     ContractContext, InstanceInfo
 } from '@concordium/web-sdk';
-import { Alert, Button, Card, Form, Input, InputNumber, Select, Space, Spin, Typography } from "antd";
+import { Alert, Button, Card, Col, Form, Input, InputNumber, List, Row, Select, Slider, Space, Spin, Typography } from "antd";
 import { Suspense, useEffect, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import { ModalConfirm } from "../components/ModalConfirm";
@@ -12,8 +12,11 @@ import { TxnStatusComponent } from "../components/txnStatusComp";
 import { CONTRACT_DATA } from "../config/contract";
 import { StateView } from "../contracts/contractTypes";
 import { getContractInfo, invokeStateView, updateBecomeTheRichestMethod } from "../contracts/invokeContractFn";
-import { invokeBalOf } from "../contracts/tokenAFn";
+import { invoke_bal_of, invoke_get_tokens, invoke_is_operator, update_operator } from "../contracts/tokenAFn";
 import { balView } from "../contracts/tokenATypes";
+import { gray, green, grey, orange, volcano } from '@ant-design/colors';
+import {DollarOutlined
+} from '@ant-design/icons';
 
 
 interface Props {
@@ -28,32 +31,20 @@ const { Option } = Select;
 export function TokenAPage(): JSX.Element {
     const { connection, account, network }: Props = useOutletContext();;
 
-    const [invkResult, setInvkResult] = useState<BigInt>()
-    const [invkError, setInvkError] = useState<string>('')
-    const [stateView, setStateView] = useState<StateView>()
-    //const [schemaRpc, setSchemaRpc] = useState<SchemaRpcResult>()
-    const [contract, setContract] = useState<InstanceInfo>()
     const [contractError, setContractError] = useState<string>('')
-    const [amountMicroCcd, setAmountMicroCcd] = useState<number>(0)
-    const [isModalOpen, setIsModalOpen] = useState(false);
     const [isAwaitingApproval, setIsAwaitingApproval] = useState(false);
     const [submittedTxHash, setSubmittedTxHash] = useState<string>();
     const navigate = useNavigate();
 
-    // token A 
     const [tokenABal, setTokenABal] = useState<balView>();
+    const [isContractOperator, setIsContractOperator] = useState<boolean[]>([false]);
+    const [tokensToSendValue, setTokensToSendValue] = useState(0);
+
+    const onChange = (newValue: number | null) => {
+        if (newValue) setTokensToSendValue(newValue);
+    };
 
 
-
-    const tokenAContractAddress: ContractAddress = {
-        index: CONTRACT_DATA.index,
-        subindex: CONTRACT_DATA.subIndex
-    }
-
-    const contractCtx: ContractContext = {
-        contract: tokenAContractAddress,
-        method: "become_the_richest.view",
-    }
 
     useEffect(() => {
 
@@ -64,218 +55,126 @@ export function TokenAPage(): JSX.Element {
 
         if (connection && account && !isAwaitingApproval) {
 
-            invokeBalOf(connection, account).then(
+            invoke_bal_of(connection, account).then(
                 (res) => {
                     setTokenABal(res);
-                }
-            ).catch((err) => {
-                setContract(undefined);
-                setContractError(err);
-            })
-
-            getContractInfo(connection).then(
-                (res) => {
-                    setContract(res);
                     setContractError('');
                 }
             ).catch((err) => {
-                setContract(undefined);
+                console.error(err)
+                setContractError(err);
+            })
+
+            invoke_is_operator(connection, account).then(
+                (res) => {
+                    if (res) {
+                        //console.log(res)
+                        setIsContractOperator(res);
+                        setContractError('');
+                    } else {
+                        setIsContractOperator([false]);
+                        setContractError('');
+                    }
+                }
+            ).catch((err) => {
+                console.error(err)
                 setContractError(err);
             })
 
 
-            invokeStateView(connection).then(
-                (state) => {
-                    setStateView(state)
-                    setInvkError('')
-                }
-            ).catch(
-                (err) => {
-                    console.log(err)
-                    setStateView(undefined)
-                    setInvkError(err)
-                }
-            )
         }
 
     }, [connection, account, isAwaitingApproval, submittedTxHash]);
 
 
-    function updateContract(amountMicroCcd: number): void {
-        if (connection && account) {
-            setIsAwaitingApproval(true);
-            let now = new Date(Date.now());
-            const msg = `new richest ${now.toLocaleDateString()} Time ${now.toLocaleTimeString()} `;
-            updateBecomeTheRichestMethod(connection,
-                account,
-                amountMicroCcd,
-                msg).then(
-                    (h) => {
-                        setSubmittedTxHash(h)
-                    }
-                ).catch(
-                    (err) => {
-                        console.error(err);
-                        setSubmittedTxHash(undefined)
-                        setIsAwaitingApproval(false);
-                    }
-                )
-        } else {
-            console.error(new Error("Not Connected to wallet"));
-        }
-    }
+
 
     function callbackTxnStateComp() {
         setIsAwaitingApproval(false)
     }
 
-    function onFinish(values: FormValues) {
-        setIsModalOpen(true);
-        //console.log('Received values of form: ', values);
-        let amount = values.amount.value;
-        if (values.amount.currency === "ccd")
-            amount *= 1e6;
-        //console.log('amount computed: ', amount);
-        setAmountMicroCcd(amount);
+
+
+
+    function add_contract_as_operator() {
+        if (connection && account) {
+            setIsAwaitingApproval(true);
+            update_operator(connection, account).then(
+                (hash) => {
+                    console.log("success then in add contract")
+                    setSubmittedTxHash(hash)
+                    setContractError('');
+                }
+            ).catch((err) => {
+                console.error(err)
+                setIsAwaitingApproval(false);
+                setContractError(err);
+            })
+        }
     }
 
-    // form 
-    const [form] = Form.useForm();
-    type Amount = {
-        currency: string;
-        value: number;
-        validated: boolean;
-    }
-    type FormValues = {
-        amount: Amount;
-    }
-    const values: FormValues = {
-        amount: {
-            currency: "ccd",
-            value: 0,
-            validated: false
+    function get_tokens() {
+        if (connection && account) {
+            setIsAwaitingApproval(true);
+            setSubmittedTxHash("")
+            invoke_get_tokens(connection, account, tokensToSendValue * 10e6).then(
+                (hash) => {
+                    console.log("success then in add contract")
+                    setSubmittedTxHash(hash)
+                    setContractError('');
+                }
+            ).catch((err) => {
+                console.error(err)
+                setIsAwaitingApproval(false);
+                setContractError(err);
+            })
         }
     }
 
 
     return (
         <Suspense fallback={<Spin />}>
-            {(stateView && contract && account) ?
+            {(connection && account) ?
                 <Space direction="vertical" size="middle">
-                    <Alert message="Become the Richest"
-                        description={<Space direction="vertical">
-                            <Text>
-                                {(account === stateView.richest_account.Some[0]) ?
-                                    `You are the richest with ${Number(contract.amount.microCcdAmount) / 1e6} CCD in contract` :
-                                    `${stateView.richest_account.Some[0]} is the richest with ${Number(contract.amount.microCcdAmount) / 1e6} CCD in contract.`
-                                    + ` Add ${stateView.minimum_raise} to become the richest !`
-                                }
-                            </Text>
-                            <Text>Please don't pay insane amounts so other user can test this contract without spending too much!</Text>
+                    <Card title="Your Token A data" style={{ backgroundColor: orange[0] }}>
+                        <p>Token A balance: {tokenABal? parseInt(tokenABal[0])/10e6: 0} TOK_A </p>
+                        <p>Is concordium-swap contract an operator of your account? {isContractOperator[0] ? "✅ you can use this dispenser 😄" : "❌ use bellow button to change that 😓" } </p>
+                        {connection && <Button type="primary" loading={isAwaitingApproval} disabled={isContractOperator[0]} onClick={() => add_contract_as_operator()}>
+                            Click to set concordium swap as operator for token A
+                        </Button>}
+                    </Card>
+                    <Card title="Token A dispenser" style={{ backgroundColor: orange[0] }}>
+                        <Space direction="vertical" size={"middle"}>
+
+                            <Row style={{ minWidth: '400px' }}>
+                                <Col span={15}>
+                                    <Slider
+                                        min={1}
+                                        max={100}
+                                        onChange={onChange}
+                                        value={typeof tokensToSendValue === 'number' ? tokensToSendValue : 0}
+                                    />
+                                </Col>
+                                <Col span={4}>
+                                    <InputNumber
+                                        min={1}
+                                        max={100}
+                                        style={{ margin: '0 16px' }}
+                                        value={tokensToSendValue}
+                                        onChange={onChange}
+                                    />
+                                </Col>
+                            </Row>
+                            <Button type="primary" loading={isAwaitingApproval} disabled={!isContractOperator[0]} onClick={() => get_tokens()}>
+                                Send me {tokensToSendValue} token A please!
+                            </Button>
                         </Space>
-                        }
-                        type="info"
-                        showIcon />
-                        <p>account token A bal: {tokenABal} TOKA </p>
-                    {connection && submittedTxHash &&
+                    </Card>
+                    {submittedTxHash &&
                         <TxnStatusComponent hash={submittedTxHash} connection={connection} callback={callbackTxnStateComp} />
                     }
-
-                    <ModalConfirm
-                        content={confirmContent(form.getFieldValue(['amount', 'value']), form.getFieldValue(['amount', 'currency']))}
-                        confirm={() => {
-                            setIsModalOpen(false)
-                            // console.log("confirmed");
-                            updateContract(amountMicroCcd)
-                        }}
-                        cancel={() => {
-                            setIsModalOpen(false)
-                            // console.log("cancel");
-                        }} title={"Become the richest"}
-                        showConfirmModal={isModalOpen}
-                    />
-
-                    <Card>
-                        <Form
-                            form={form}
-                            layout="vertical"
-                            onFinish={onFinish}
-                            size="large"
-                            colon={true}
-                            initialValues={values}
-                            title="Amount to become the richest"
-                            requiredMark={true}
-                            style={{ maxWidth: 600 }} >
-                            <Form.Item name={["amount", "validated"]} label="Amount"
-                                dependencies={[['amount', 'currency'], ['amount', 'value']]}
-                                rules={[
-                                    ({ getFieldValue }) => ({
-                                        validator(_, _v) {
-                                            const curr = getFieldValue(['amount', 'currency'])
-                                            const value = getFieldValue(['amount', 'value'])
-                                            const min = Number(stateView.minimum_raise) + Number(contract.amount.microCcdAmount) / 1e6 // this is in cents Euro 
-
-                                            switch (curr) {
-                                                case 'microCcd':
-                                                    const min_micro = min * 1e6
-                                                    if (value > min_micro) {
-                                                        form.setFieldsValue({ amount: { validated: true } });
-                                                        return Promise.resolve("microCdd Amount Ok");
-                                                    }
-                                                    //form.setFieldsValue({amount:{validation:false}});
-                                                    return Promise.reject(new Error(`Must be greater than ${min_micro} microCcd @ 1 cent per CCD`));
-
-                                                case 'ccd':
-                                                    if (value > min) {
-                                                        form.setFieldsValue({ amount: { validated: true } });
-                                                        return Promise.resolve("microCdd Amount Ok");
-                                                    }
-                                                    //form.setFieldsValue({amount:{validation:false}});
-                                                    return Promise.reject(new Error(`Must be greater than ${min} Ccd @ 1 cent per CCD`));
-                                                default:
-                                                    //form.setFieldsValue({amount:{validation:false}});
-                                                    return Promise.reject(new Error("Input correct amount and currency"));
-                                            }
-
-                                        },
-                                    }),
-                                ]} >
-                                <Input.Group compact>
-                                    <Form.Item
-                                        name={['amount', 'value']}
-                                        dependencies={[['amount', 'currency'], ['amount', 'validation']]}
-                                        noStyle
-                                        rules={[
-                                            { required: true, message: 'Value is required' },
-                                        ]} >
-                                        <InputNumber style={{ width: '50%' }} placeholder="Enter Ammount" />
-                                    </Form.Item>
-                                    <Form.Item
-                                        name={['amount', 'currency']}
-                                        dependencies={[['amount', 'value'], ['amount', 'validation']]}
-                                        noStyle
-                                        rules={[
-                                            { required: true, message: 'Currency is required', validateTrigger: 'onChange' },
-                                        ]} >
-                                        <Select style={{ width: 100 }}>
-                                            <Option value="ccd">CCD</Option>
-                                            <Option value="microCcd">μCCD</Option>
-                                        </Select>
-                                    </Form.Item>
-                                </Input.Group>
-                            </Form.Item>
-                            <Form.Item>
-                                <Button type="primary" htmlType="submit">
-                                    Pay to become the richest!
-                                </Button>
-                            </Form.Item>
-                        </Form>
-                    </Card>
-
                 </Space>
-
                 :
-
                 account ? <Spin /> : <NoAccount network={network?.name} />
 
 
