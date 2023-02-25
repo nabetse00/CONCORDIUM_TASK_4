@@ -9,8 +9,8 @@ const WALLET_CONNECT_PROJECT_ID = '19225c963ab9231c4aeef948e34d423a'
 const WALLET_CONNECT_OPTS: SignClientTypes.Options = {
     projectId: WALLET_CONNECT_PROJECT_ID,
     metadata: {
-        name: 'become_the_richest Contract Update',
-        description: 'Become the Richest dApp demo',
+        name: 'Concordium-swap',
+        description: 'DEX on Concordium chain',
         url: '#',
         icons: ['https://walletconnect.com/walletconnect-logo.png'],
     },

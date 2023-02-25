@@ -1,6 +1,6 @@
 import { orange } from '@ant-design/colors';
 import { Network, WalletConnection } from "@concordium/react-components";
-import { Button, Card, Col, InputNumber, Row, Select, Slider, Space, Spin, Typography } from "antd";
+import { Button, Card, Col, InputNumber, Row, Select, Slider, Space, Spin, Typography, Image } from "antd";
 import { Suspense, useEffect, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import { NoAccount } from "../components/NoAccount";
@@ -172,15 +172,5 @@ export function TokenAPage(): JSX.Element {
             }
         </Suspense >
 
-    );
-}
-
-function confirmContent(amount: number, currency: string): JSX.Element {
-
-    return (
-        <Space direction="vertical">
-            <Text>Please don't pay insane amounts so other user can test this contract without spending too much!</Text>
-            <Text type="danger">You are about to spend {amount} {currency} to become the richest is it OK?</Text>
-        </Space>
     );
 }
