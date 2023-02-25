@@ -5,6 +5,7 @@ import './index.css'
 
 //Router
 import {
+  createHashRouter,
   createBrowserRouter,
   createRoutesFromElements,
   Route,
@@ -13,7 +14,7 @@ import {
 import ErrorPage from './pages/errorPage';
 import loadable from '@loadable/component';
 
-export const base = '/CONCORDIUM_TASK_4/'
+export const base = '/' // '/CONCORDIUM_TASK_4/'
 // component lazy loading
 
 const Account = loadable(() => import('./pages/AccountInfoPage'),
@@ -38,7 +39,7 @@ const ContractData = loadable(() => import('./pages/ContractDataPage'),
   });
 
 // Root route
-const router = createBrowserRouter(
+const router = createHashRouter(
   createRoutesFromElements(
     <Route
       path={base}

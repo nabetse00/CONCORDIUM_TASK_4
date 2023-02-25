@@ -17,6 +17,7 @@ import { balView } from "../contracts/tokenATypes";
 import { gray, green, grey, orange, volcano } from '@ant-design/colors';
 import {DollarOutlined
 } from '@ant-design/icons';
+import { base } from "../main";
 
 
 interface Props {
@@ -50,7 +51,7 @@ export function TokenAPage(): JSX.Element {
 
         if (!connection || !account) {
             console.log("redirect")
-            navigate('/CONCORDIUM_TASK_4/')
+            navigate(base)
         }
 
         if (connection && account && !isAwaitingApproval) {

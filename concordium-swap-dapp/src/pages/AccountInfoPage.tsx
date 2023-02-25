@@ -25,7 +25,7 @@ export function AccountInfoPage() {
     useEffect(() => {
 
         if(!connection || !account ){
-            navigate('/CONCORDIUM_TASK_4/')
+            navigate(base)
         }
 
         if (connection) {

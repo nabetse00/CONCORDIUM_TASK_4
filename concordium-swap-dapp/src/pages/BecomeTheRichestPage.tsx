@@ -12,6 +12,7 @@ import { TxnStatusComponent } from "../components/txnStatusComp";
 import { CONTRACT_DATA } from "../config/contract";
 import { StateView } from "../contracts/contractTypes";
 import { getContractInfo, invokeStateView, updateBecomeTheRichestMethod } from "../contracts/invokeContractFn";
+import { base } from "../main";
 
 
 interface Props {
@@ -54,7 +55,7 @@ export function BecomeTheRichestPage(): JSX.Element {
 
         if(!connection || !account ){
             console.log("redirect")
-           navigate('/CONCORDIUM_TASK_4/')
+           navigate(base)
         }
 
         if (connection && account && !isAwaitingApproval) {

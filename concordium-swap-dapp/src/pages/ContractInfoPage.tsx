@@ -7,6 +7,7 @@ import { CONTRACT_DATA } from "../config/contract"
 import Balance from "../components/Balance";
 import { NoAccount } from "../components/NoAccount";
 import { get_contract_name } from "../utils/contracts";
+import { base } from "../main";
 
 
 interface Props {
@@ -30,7 +31,7 @@ export function ContractInfoPage() {
     useEffect(() => {
 
         if(!connection || !account ){
-           navigate('/CONCORDIUM_TASK_4/')
+           navigate(base)
         }
 
         if (connection) {
