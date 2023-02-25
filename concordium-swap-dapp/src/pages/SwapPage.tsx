@@ -4,7 +4,7 @@ import {
     ContractContext, InstanceInfo
 } from '@concordium/web-sdk';
 import { Alert, Button, Card, Col, Collapse, Form, Input, InputNumber, List, Row, Select, Slider, Space, Spin, Typography } from "antd";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import { ModalConfirm } from "../components/ModalConfirm";
 import { NoAccount } from "../components/NoAccount";
@@ -15,12 +15,13 @@ import { getContractInfo, invokeStateView, updateBecomeTheRichestMethod } from "
 import { invoke_bal_of, invoke_get_tokens, invoke_is_operator, update_operator } from "../contracts/tokenAFn";
 import { balView } from "../contracts/tokenATypes";
 import { blue, gray, green, grey, orange, volcano } from '@ant-design/colors';
-import { AccountInfo } from '@concordium/web-sdk';
+import { AccountInfo, IdStatementBuilder, verifyIdstatement } from '@concordium/web-sdk';
 import {
     DollarOutlined
 } from '@ant-design/icons';
 import { base } from "../main";
 import { invoke_add_liquidity, invoke_liq_of, invoke_remove_liquidity, invoke_swap_ccd_for_token_a, invoke_swap_token_a_for_ccd } from "../contracts/swapFn";
+import { detectConcordiumProvider } from '@concordium/browser-wallet-api-helpers';
 
 const { Panel } = Collapse;
 
@@ -50,6 +51,35 @@ export function SwapPage(): JSX.Element {
     const [tokenLiqValue, setTokenLiqValue] = useState(0);
     const [ccdSwapValue, setCcdSwapValue] = useState(0);
     const [tokenASwapValue, setTokenASwapValue] = useState(0);
+    const [isOver18, setIsOver18] = useState(false)
+
+
+    const handleAuthorize = useCallback(async () => {
+        if (!account) {
+            throw new Error('Unreachable account!');
+        }
+        const statementBuilder = new IdStatementBuilder();
+        statementBuilder.addMinimumAge(18);
+        const statement = statementBuilder.getStatement();
+        const provider = await detectConcordiumProvider();
+        const proof = await provider.requestIdProof(account, statement, "AA");
+        try {
+            verifyIdstatement(statement);
+            // some docuementation would be nice 
+            // no idea on how to check proof is valid from chain data ...
+            // console.log("proof" + proof.credential + " " + proof.proof.value)
+            if (proof) { 
+                setIsOver18(true) 
+            } else {
+                setIsOver18(false)
+            }
+        } catch (e) {
+            // States why the statement is not valid:
+            console.log(e);
+            setIsOver18(false)
+        }
+
+    }, [account]);
 
     // Liquidity
 
@@ -244,210 +274,210 @@ export function SwapPage(): JSX.Element {
         //console.log(key);
     };
 
-
     return (
         <Suspense fallback={<Spin />}>
+
+
             {(connection && account) ?
-                <Space direction="vertical" size="small">
-                    <div>
-                    {submittedTxHash &&
-                        <TxnStatusComponent hash={submittedTxHash} connection={connection} callback={callbackTxnStateComp} />
-                    }
-                    </div>
-                    <Collapse defaultActiveKey={['0']} onChange={onChangePanelSwap} >
-                        <Panel header="Swap some CCD for Token A" key={1} >
-                            <p>Your CCD balance: {info ? Number(info.accountAmount) / 1e6 : 0} CCD </p>
-                            <p>Your TokenA balance: {tokenABal ? parseInt(tokenABal[0]) / 1e6 : 0} TOKA </p>
-                            <p>Is concordium-swap contract an operator of your account?
-                                {isContractOperator[0] ? "✅ you can swap ccd for tokenA 😄" : "❌ use bellow button to change that 😓"}
-                            </p>
+                !isOver18 ?
+                    <Alert type="error" showIcon
+                        description={
+                            <Button type="primary" danger={true}
+                                onClick={handleAuthorize}>
+                                Click here to prove you are over 18 !
+                            </Button>}
+                        message="You must be over 18 to use Concordium Swap"
+                    />
+                    :
+                    <Space direction="vertical" size="small">
+                        <div>
 
-                            <Row gutter={[16, 16]}>
-                                <Col span={24}> Amount of CCD to swap: </Col>
-                                <Col span={10}>
-                                    <Slider
-                                        disabled={!isContractOperator[0]}
-                                        min={0}
-                                        max={info ? Number(info.accountAmount) / 1e6 : 0}
-                                        onChange={onChangeCcdSwapValue}
-                                        value={typeof ccdSwapValue === 'number' ? ccdSwapValue : 0}
-                                    />
-                                </Col>
-                                <Col span={4}>
-                                    <InputNumber
-                                        disabled={!isContractOperator[0]}
-                                        min={0}
-                                        max={info ? Number(info.accountAmount) / 1e6 : 0}
-                                        style={{ margin: '0 16px' }}
-                                        value={ccdSwapValue}
-                                        onChange={onChangeCcdSwapValue}
-                                    />
-                                </Col>
-                            </Row>
+                            {submittedTxHash &&
+                                <TxnStatusComponent hash={submittedTxHash} connection={connection} callback={callbackTxnStateComp} />
+                            }
+                        </div>
+                        <Collapse defaultActiveKey={['0']} onChange={onChangePanelSwap} >
+                            <Panel header="Swap some CCD for Token A" key={1} >
+                                <p>Your CCD balance: {info ? Number(info.accountAmount) / 1e6 : 0} CCD </p>
+                                <p>Your TokenA balance: {tokenABal ? parseInt(tokenABal[0]) / 1e6 : 0} TOKA </p>
+                                <p>Is concordium-swap contract an operator of your account?
+                                    {isContractOperator[0] ? "✅ you can swap ccd for tokenA 😄" : "❌ use bellow button to change that 😓"}
+                                </p>
 
-                            <Button type="primary" loading={isAwaitingApproval}
-                                disabled={!isContractOperator[0] || ccdSwapValue == 0}
-                                onClick={() => swap_ccd_for_token_a()}>
-                                Click to swap {ccdSwapValue} CCD for token A
-                            </Button>
-                        </Panel>
-                        <Panel header="Swap some TokenA for CCD" key={2} >
-                            <p>Your TokenA balance: {tokenABal ? parseInt(tokenABal[0]) / 1e6 : 0} TOKA </p>
-                            <p>Your CCD balance: {info ? Number(info.accountAmount) / 1e6 : 0} CCD </p>
-                            <p>Is concordium-swap contract an operator of your account?
-                                {isContractOperator[0] ? "✅ you can swap tokenA for ccd 😄" : "❌ use bellow button to change that 😓"}
-                            </p>
+                                <Row gutter={[16, 16]}>
+                                    <Col span={24}> Amount of CCD to swap: </Col>
+                                    <Col span={10}>
+                                        <Slider
+                                            disabled={!isContractOperator[0]}
+                                            min={0}
+                                            max={info ? Number(info.accountAmount) / 1e6 : 0}
+                                            onChange={onChangeCcdSwapValue}
+                                            value={typeof ccdSwapValue === 'number' ? ccdSwapValue : 0}
+                                        />
+                                    </Col>
+                                    <Col span={4}>
+                                        <InputNumber
+                                            disabled={!isContractOperator[0]}
+                                            min={0}
+                                            max={info ? Number(info.accountAmount) / 1e6 : 0}
+                                            style={{ margin: '0 16px' }}
+                                            value={ccdSwapValue}
+                                            onChange={onChangeCcdSwapValue}
+                                        />
+                                    </Col>
+                                </Row>
 
-                            <Row gutter={[16, 16]}>
-                                <Col span={24}> Amount of TokenA to swap: </Col>
-                                <Col span={10}>
-                                    <Slider
-                                        disabled={!isContractOperator[0]}
-                                        min={0}
-                                        max={tokenABal ? parseInt(tokenABal[0]) / 1e6 : 0}
-                                        onChange={onChangeTokenASwapValue}
-                                        value={typeof tokenASwapValue === 'number' ? tokenASwapValue : 0}
-                                    />
-                                </Col>
-                                <Col span={4}>
-                                    <InputNumber
-                                        disabled={!isContractOperator[0]}
-                                        min={0}
-                                        max={tokenABal ? parseInt(tokenABal[0]) / 1e6 : 0}
-                                        style={{ margin: '0 16px' }}
-                                        value={tokenASwapValue}
-                                        onChange={onChangeTokenASwapValue}
-                                    />
-                                </Col>
-                            </Row>
-
-                            <Button type="primary" loading={isAwaitingApproval}
-                                disabled={!isContractOperator[0] || tokenASwapValue == 0}
-                                onClick={() => swap_token_a_for_ccd()}>
-                                Click to swap {tokenASwapValue} TokenA for CCD
-                            </Button>
-                        </Panel>
-
-                    </Collapse>
-                    <Collapse defaultActiveKey={['0']} onChange={onChangePanelLiquidity} >
-                        <Panel header="Liquidity Provider: Add some liquidity to earn 😄!" key={1} >
-
-                            <p>Your Token Liquitidy: {tokenLiq ? parseInt(tokenLiq[0]) / 1e6 : 0} CCDS-TOKA-CCD </p>
-                            <p>Is concordium-swap contract an operator of your account? {isContractOperator[0] ? "✅ you can add liquidity 😄" : "❌ use bellow button to change that 😓"} </p>
-                            <Space direction="vertical">
-                                <Button type="primary" loading={isAwaitingApproval} disabled={isContractOperator[0]} onClick={() => add_contract_as_operator()}>
-                                    Click to set concordium swap as operator for token A
-                                </Button>
-                                {info &&
-                                    <Row gutter={[16, 16]}>
-                                        <Col span={24}> Amount of CCD: </Col>
-                                        <Col span={10}>
-                                            <Slider
-                                                disabled={!isContractOperator[0]}
-                                                min={0}
-                                                max={Number(info.accountAmount) / 1e6}
-                                                onChange={onChangeCCDLiq}
-                                                value={typeof ccdToLiqValue === 'number' ? ccdToLiqValue : 0}
-                                            />
-                                        </Col>
-                                        <Col span={4}>
-                                            <InputNumber
-                                                disabled={!isContractOperator[0]}
-                                                min={0}
-                                                max={Number(info.accountAmount) / 1e6}
-                                                style={{ margin: '0 16px' }}
-                                                value={ccdToLiqValue}
-                                                onChange={onChangeCCDLiq}
-                                            />
-                                        </Col>
-                                    </Row>
-                                }
-                                {tokenABal &&
-                                    <Row gutter={[16, 16]}>
-                                        <Col span={24}> Amount of token A: </Col>
-                                        <Col span={10}>
-                                            <Slider
-                                                disabled={!isContractOperator[0]}
-                                                min={0}
-                                                max={parseInt(tokenABal[0]) / 1e6}
-                                                onChange={onChangeTokenALiq}
-                                                value={typeof tokenAToLiqValue === 'number' ? tokenAToLiqValue : 0}
-                                            />
-                                        </Col>
-                                        <Col span={4}>
-                                            <InputNumber
-                                                disabled={!isContractOperator[0]}
-                                                min={0}
-                                                max={parseInt(tokenABal[0]) / 1e6}
-                                                style={{ margin: '0 16px' }}
-                                                value={tokenAToLiqValue}
-                                                onChange={onChangeTokenALiq}
-                                            />
-                                        </Col>
-                                    </Row>
-                                }
                                 <Button type="primary" loading={isAwaitingApproval}
-                                    disabled={!isContractOperator[0]}
-                                    onClick={() => add_liquidity()}>
-                                    Click to add Liquidity
+                                    disabled={!isContractOperator[0] || ccdSwapValue == 0}
+                                    onClick={() => swap_ccd_for_token_a()}>
+                                    Click to swap {ccdSwapValue} CCD for token A
                                 </Button>
-                            </Space>
+                            </Panel>
+                            <Panel header="Swap some TokenA for CCD" key={2} >
+                                <p>Your TokenA balance: {tokenABal ? parseInt(tokenABal[0]) / 1e6 : 0} TOKA </p>
+                                <p>Your CCD balance: {info ? Number(info.accountAmount) / 1e6 : 0} CCD </p>
+                                <p>Is concordium-swap contract an operator of your account?
+                                    {isContractOperator[0] ? "✅ you can swap tokenA for ccd 😄" : "❌ use bellow button to change that 😓"}
+                                </p>
 
-                        </Panel>
-                        <Panel header="Liquidity Provider: Remove some liquidity and get your 💰💰💰" key={2} >
+                                <Row gutter={[16, 16]}>
+                                    <Col span={24}> Amount of TokenA to swap: </Col>
+                                    <Col span={10}>
+                                        <Slider
+                                            disabled={!isContractOperator[0]}
+                                            min={0}
+                                            max={tokenABal ? parseInt(tokenABal[0]) / 1e6 : 0}
+                                            onChange={onChangeTokenASwapValue}
+                                            value={typeof tokenASwapValue === 'number' ? tokenASwapValue : 0}
+                                        />
+                                    </Col>
+                                    <Col span={4}>
+                                        <InputNumber
+                                            disabled={!isContractOperator[0]}
+                                            min={0}
+                                            max={tokenABal ? parseInt(tokenABal[0]) / 1e6 : 0}
+                                            style={{ margin: '0 16px' }}
+                                            value={tokenASwapValue}
+                                            onChange={onChangeTokenASwapValue}
+                                        />
+                                    </Col>
+                                </Row>
 
-                            <p>Your Token Liquitidy: {tokenLiq ? parseInt(tokenLiq[0]) / 1e6 : 0} CCDS-TOKA-CCD </p>
-                            <p>Your TokenA: {tokenABal ? parseInt(tokenABal[0]) / 1e6 : 0} TOKA </p>
-                            <p>Your CCD: {info ? Number(info.accountAmount) / 1e6 : 0} CCD </p>
-                            <p>Is concordium-swap contract an operator of your account? {isContractOperator[0] ? "✅ you can remove liquidity 😄" : "❌ use bellow button to change that 😓"} </p>
+                                <Button type="primary" loading={isAwaitingApproval}
+                                    disabled={!isContractOperator[0] || tokenASwapValue == 0}
+                                    onClick={() => swap_token_a_for_ccd()}>
+                                    Click to swap {tokenASwapValue} TokenA for CCD
+                                </Button>
+                            </Panel>
 
-                            <Row gutter={[16, 16]}>
-                                <Col span={24}> Amount of liquidity tokens to remove: </Col>
-                                <Col span={10}>
-                                    <Slider
+                        </Collapse>
+                        <Collapse defaultActiveKey={['0']} onChange={onChangePanelLiquidity} >
+                            <Panel header="Liquidity Provider: Add some liquidity to earn 😄!" key={1} >
+
+                                <p>Your Token Liquitidy: {tokenLiq ? parseInt(tokenLiq[0]) / 1e6 : 0} CCDS-TOKA-CCD </p>
+                                <p>Is concordium-swap contract an operator of your account? {isContractOperator[0] ? "✅ you can add liquidity 😄" : "❌ use bellow button to change that 😓"} </p>
+                                <Space direction="vertical">
+                                    <Button type="primary" loading={isAwaitingApproval} disabled={isContractOperator[0]} onClick={() => add_contract_as_operator()}>
+                                        Click to set concordium swap as operator for token A
+                                    </Button>
+                                    {info &&
+                                        <Row gutter={[16, 16]}>
+                                            <Col span={24}> Amount of CCD: </Col>
+                                            <Col span={10}>
+                                                <Slider
+                                                    disabled={!isContractOperator[0]}
+                                                    min={0}
+                                                    max={Number(info.accountAmount) / 1e6}
+                                                    onChange={onChangeCCDLiq}
+                                                    value={typeof ccdToLiqValue === 'number' ? ccdToLiqValue : 0}
+                                                />
+                                            </Col>
+                                            <Col span={4}>
+                                                <InputNumber
+                                                    disabled={!isContractOperator[0]}
+                                                    min={0}
+                                                    max={Number(info.accountAmount) / 1e6}
+                                                    style={{ margin: '0 16px' }}
+                                                    value={ccdToLiqValue}
+                                                    onChange={onChangeCCDLiq}
+                                                />
+                                            </Col>
+                                        </Row>
+                                    }
+                                    {tokenABal &&
+                                        <Row gutter={[16, 16]}>
+                                            <Col span={24}> Amount of token A: </Col>
+                                            <Col span={10}>
+                                                <Slider
+                                                    disabled={!isContractOperator[0]}
+                                                    min={0}
+                                                    max={parseInt(tokenABal[0]) / 1e6}
+                                                    onChange={onChangeTokenALiq}
+                                                    value={typeof tokenAToLiqValue === 'number' ? tokenAToLiqValue : 0}
+                                                />
+                                            </Col>
+                                            <Col span={4}>
+                                                <InputNumber
+                                                    disabled={!isContractOperator[0]}
+                                                    min={0}
+                                                    max={parseInt(tokenABal[0]) / 1e6}
+                                                    style={{ margin: '0 16px' }}
+                                                    value={tokenAToLiqValue}
+                                                    onChange={onChangeTokenALiq}
+                                                />
+                                            </Col>
+                                        </Row>
+                                    }
+                                    <Button type="primary" loading={isAwaitingApproval}
                                         disabled={!isContractOperator[0]}
-                                        min={0}
-                                        max={parseInt(tokenLiq ? tokenLiq[0] : "0") / 1e6}
-                                        onChange={onChangeTokenLiqValue}
-                                        value={typeof tokenLiqValue === 'number' ? tokenLiqValue : 0}
-                                    />
-                                </Col>
-                                <Col span={4}>
-                                    <InputNumber
-                                        disabled={!isContractOperator[0]}
-                                        min={0}
-                                        max={parseInt(tokenLiq ? tokenLiq[0] : "0") / 1e6}
-                                        style={{ margin: '0 16px' }}
-                                        value={tokenLiqValue}
-                                        onChange={onChangeTokenLiqValue}
-                                    />
-                                </Col>
-                            </Row>
+                                        onClick={() => add_liquidity()}>
+                                        Click to add Liquidity
+                                    </Button>
+                                </Space>
 
-                            <Button type="primary" loading={isAwaitingApproval}
-                                disabled={!isContractOperator[0] || tokenLiqValue == 0}
-                                onClick={() => rm_liquidity()}>
-                                Click to remove {tokenLiqValue} Liquidity tokens
-                            </Button>
-                        </Panel>
-                    </Collapse>
-                </Space>
+                            </Panel>
+                            <Panel header="Liquidity Provider: Remove some liquidity and get your 💰💰💰" key={2} >
+
+                                <p>Your Token Liquitidy: {tokenLiq ? parseInt(tokenLiq[0]) / 1e6 : 0} CCDS-TOKA-CCD </p>
+                                <p>Your TokenA: {tokenABal ? parseInt(tokenABal[0]) / 1e6 : 0} TOKA </p>
+                                <p>Your CCD: {info ? Number(info.accountAmount) / 1e6 : 0} CCD </p>
+                                <p>Is concordium-swap contract an operator of your account? {isContractOperator[0] ? "✅ you can remove liquidity 😄" : "❌ use bellow button to change that 😓"} </p>
+
+                                <Row gutter={[16, 16]}>
+                                    <Col span={24}> Amount of liquidity tokens to remove: </Col>
+                                    <Col span={10}>
+                                        <Slider
+                                            disabled={!isContractOperator[0]}
+                                            min={0}
+                                            max={parseInt(tokenLiq ? tokenLiq[0] : "0") / 1e6}
+                                            onChange={onChangeTokenLiqValue}
+                                            value={typeof tokenLiqValue === 'number' ? tokenLiqValue : 0}
+                                        />
+                                    </Col>
+                                    <Col span={4}>
+                                        <InputNumber
+                                            disabled={!isContractOperator[0]}
+                                            min={0}
+                                            max={parseInt(tokenLiq ? tokenLiq[0] : "0") / 1e6}
+                                            style={{ margin: '0 16px' }}
+                                            value={tokenLiqValue}
+                                            onChange={onChangeTokenLiqValue}
+                                        />
+                                    </Col>
+                                </Row>
+
+                                <Button type="primary" loading={isAwaitingApproval}
+                                    disabled={!isContractOperator[0] || tokenLiqValue == 0}
+                                    onClick={() => rm_liquidity()}>
+                                    Click to remove {tokenLiqValue} Liquidity tokens
+                                </Button>
+                            </Panel>
+                        </Collapse>
+                    </Space>
                 :
                 account ? <Spin /> : <NoAccount network={network?.name} />
-
-
             }
         </Suspense >
 
-    );
-}
-
-function confirmContent(amount: number, currency: string): JSX.Element {
-
-    return (
-        <Space direction="vertical">
-            <Text>Please don't pay insane amounts so other user can test this contract without spending too much!</Text>
-            <Text type="danger">You are about to spend {amount} {currency} to become the richest is it OK?</Text>
-        </Space>
     );
 }

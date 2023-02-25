@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 # contract name in /src/lib.rs
 $NAME_CONTRACT="ccd_swap"
 # change on module changes
-$NAME_CONTRACT_MODULE="concordium_swap_module"
+$NAME_CONTRACT_MODULE="concordium_swap_kp_module"
 $NAME_CONTRACT_TOKEN_A="cis2_token_a"
 $GET_TOKEN_ENTRY="get_token_a"
 $UPDATE_TOKEN_OP="updateOperator"
