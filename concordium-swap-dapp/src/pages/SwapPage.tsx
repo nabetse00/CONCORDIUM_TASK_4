@@ -56,8 +56,8 @@ export function SwapPage(): JSX.Element {
             // some docuementation would be nice 
             // no idea on how to check proof is valid from chain data ...
             // console.log("proof" + proof.credential + " " + proof.proof.value)
-            if (proof) { 
-                setIsOver18(true) 
+            if (proof) {
+                setIsOver18(true)
             } else {
                 setIsOver18(false)
             }
@@ -291,6 +291,10 @@ export function SwapPage(): JSX.Element {
                                 <p>Is concordium-swap contract an operator of your account?
                                     {isContractOperator[0] ? "✅ you can swap ccd for tokenA 😄" : "❌ use bellow button to change that 😓"}
                                 </p>
+                                
+                                <Button type="primary" loading={isAwaitingApproval} disabled={isContractOperator[0]} onClick={() => add_contract_as_operator()}>
+                                    Click to set concordium swap as operator for token A
+                                </Button>
 
                                 <Row gutter={[16, 16]}>
                                     <Col span={24}> Amount of CCD to swap: </Col>
@@ -327,6 +331,9 @@ export function SwapPage(): JSX.Element {
                                 <p>Is concordium-swap contract an operator of your account?
                                     {isContractOperator[0] ? "✅ you can swap tokenA for ccd 😄" : "❌ use bellow button to change that 😓"}
                                 </p>
+                                <Button type="primary" loading={isAwaitingApproval} disabled={isContractOperator[0]} onClick={() => add_contract_as_operator()}>
+                                    Click to set concordium swap as operator for token A
+                                </Button>
 
                                 <Row gutter={[16, 16]}>
                                     <Col span={24}> Amount of TokenA to swap: </Col>
@@ -430,7 +437,9 @@ export function SwapPage(): JSX.Element {
                                 <p>Your TokenA: {tokenABal ? parseInt(tokenABal[0]) / 1e6 : 0} TOKA </p>
                                 <p>Your CCD: {info ? Number(info.accountAmount) / 1e6 : 0} CCD </p>
                                 <p>Is concordium-swap contract an operator of your account? {isContractOperator[0] ? "✅ you can remove liquidity 😄" : "❌ use bellow button to change that 😓"} </p>
-
+                                <Button type="primary" loading={isAwaitingApproval} disabled={isContractOperator[0]} onClick={() => add_contract_as_operator()}>
+                                    Click to set concordium swap as operator for token A
+                                </Button>
                                 <Row gutter={[16, 16]}>
                                     <Col span={24}> Amount of liquidity tokens to remove: </Col>
                                     <Col span={10}>
