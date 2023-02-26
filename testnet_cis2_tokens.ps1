@@ -1,7 +1,6 @@
 $ErrorActionPreference = "Stop"
 $NAME_CONTRACT="cis2_tokens"
 $NAME_CONTRACT_MODULE='6ff6fe2e33743b99a5e864d477841e9acfb45e12eb0bd8597980bac7cbd936c4'
-# '6ff6fe2e33743b99a5e864d477841e9acfb45e12eb0bd8597980bac7cbd936c4'
 $NAME_CONTRACT_TOKEN_A="cis2_token_a"
 $GET_TOKEN_ENTRY="get_token_a"
 echo "-----------------------------------"

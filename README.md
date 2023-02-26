@@ -79,6 +79,12 @@ See this [video](https://www.youtube.com/watch?v=AAUd10IJlPM)
 
 ![Screenshot6](./media/screen6.png)
 
+![Screenshot7](./media/screen7.png)
+
+![Screenshot8](./media/screen8.png)
+
+![Screenshot9](./media/screen9.png)
+
 
 
 
